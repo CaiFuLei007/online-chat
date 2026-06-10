@@ -67,9 +67,185 @@
 
 ---
 
-## 二、后端架构与模块划分
+## 二、项目依赖清单与安装方式
 
-### 2.1 总体架构图
+> 目标系统：Ubuntu 22.04 / 24.04 LTS（Docker 镜像与宿主机均适用）。
+> 其他 Debian 系发行版包名基本一致；RHEL/CentOS 需替换为 `dnf` 对应包名。
+
+### 2.1 构建依赖（编译期，builder 阶段安装）
+
+| 依赖 | 最低版本 | 用途 | Ubuntu/Debian 包名 |
+|---|---|---|---|
+| CMake | ≥ 3.16 | 构建系统 | `cmake` |
+| GCC / G++ | ≥ 11（C++17） | C++ 编译器 | `build-essential` |
+| Git | 任意 | 拉取 Drogon 源码 | `git` |
+| ca-certificates | — | HTTPS 证书（git clone / curl） | `ca-certificates` |
+| jsoncpp 开发库 | ≥ 1.7 | JSON 解析（Drogon 依赖） | `libjsoncpp-dev` |
+| UUID 开发库 | — | UUID 生成（Drogon 依赖） | `uuid-dev` |
+| OpenSSL 开发库 | ≥ 1.1 | TLS / bcrypt（Drogon 依赖） | `libssl-dev` |
+| zlib 开发库 | — | 压缩（Drogon 依赖） | `zlib1g-dev` |
+| MySQL 客户端开发库 | ≥ 8.0 | Drogon ORM 连接 MySQL | `libmysqlclient-dev` |
+| hiredis 开发库 | ≥ 1.0 | Drogon 连接 Redis | `libhiredis-dev` |
+| curl | — | SMTP 发送验证码邮件 | `curl` |
+
+**一键安装（Ubuntu/Debian）：**
+
+```bash
+sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+    build-essential cmake git ca-certificates \
+    libjsoncpp-dev uuid-dev libssl-dev zlib1g-dev \
+    libmysqlclient-dev libhiredis-dev curl
+```
+
+### 2.2 Drogon 框架（从源码编译安装）
+
+| 依赖 | 版本 | 说明 |
+|---|---|---|
+| Drogon | v1.9.13 | C++ HTTP/WebSocket 框架，含 ORM、线程池、JSON、Redis 客户端 |
+| Trantor | 随 Drogon 附带 | Drogon 的底层网络库（git submodule，无需单独安装） |
+
+**安装方式（编译安装，Dockerfile 中已自动化）：**
+
+```bash
+git clone --depth 1 --branch v1.9.13 \
+    https://github.com/drogonframework/drogon.git /tmp/drogon
+cd /tmp/drogon
+git submodule update --init --recursive
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_CTL=OFF
+cmake --build build -j$(nproc)
+sudo cmake --install build   # 安装到 /usr/local
+rm -rf /tmp/drogon
+```
+
+> 安装后 `DrogonConfig.cmake` 位于 `/usr/local/lib/cmake/Drogon/`，
+> 项目的 `find_package(Drogon CONFIG REQUIRED)` 即可找到。
+
+### 2.3 运行时依赖（生产/运行阶段安装）
+
+| 依赖 | 版本 | 用途 | Ubuntu/Debian 包名 |
+|---|---|---|---|
+| MySQL Server | 8.0 | 关系型数据存储 | `mysql-server`（或 Docker 镜像 `mysql:8.0`） |
+| Redis Server | ≥ 7.0 | 缓存 / 在线表 / 验证码 / 消息序号 | `redis-server`（或 Docker 镜像 `redis:7-alpine`） |
+| libjsoncpp | ≥ 1.7 | JSON 解析运行时 | `libjsoncpp25` |
+| OpenSSL | ≥ 1.1 | TLS 运行时 | `libssl3` |
+| zlib | — | 压缩运行时 | `zlib1g` |
+| MySQL 客户端运行时 | ≥ 8.0 | MySQL 连接 | `libmysqlclient21` |
+| hiredis 运行时 | ≥ 1.0 | Redis 连接 | `libhiredis0.14` |
+| curl | — | SMTP 发送邮件 | `curl` |
+| ca-certificates | — | HTTPS 证书验证 | `ca-certificates` |
+
+**一键安装（Ubuntu/Debian 运行时）：**
+
+```bash
+sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+    mysql-server redis-server \
+    libjsoncpp25 libssl3 zlib1g libmysqlclient21 libhiredis0.14 \
+    curl ca-certificates
+```
+
+> ⚠️ 如果使用 Docker 部署（推荐），MySQL 和 Redis 由 `docker-compose.yml` 自动拉取镜像，
+> 宿主机无需安装 MySQL/Redis，只需安装 Docker（见 2.5）。
+
+### 2.4 测试依赖
+
+| 依赖 | 版本 | 用途 | Ubuntu/Debian 包名 |
+|---|---|---|---|
+| Google Test | ≥ 1.12 | C++ 单元测试框架 | `libgtest-dev` |
+| jsoncpp 开发库 | — | 测试中解析 JSON 响应 | `libjsoncpp-dev`（同构建依赖） |
+
+**一键安装：**
+
+```bash
+sudo apt-get install -y --no-install-recommends libgtest-dev libjsoncpp-dev
+```
+
+> 注：`libgtest-dev` 在 Ubuntu 22.04+ 已包含预编译库，CMake 中
+> `find_package(GTest REQUIRED)` 即可找到，无需手动编译 gtest。
+
+### 2.5 Docker 部署依赖
+
+| 依赖 | 最低版本 | 用途 |
+|---|---|---|
+| Docker Engine | ≥ 20.10 | 容器运行时 |
+| Docker Compose | ≥ 2.0（V2 插件） | 多容器编排 |
+
+**安装 Docker Engine + Compose（Ubuntu）：**
+
+```bash
+# 卸载旧版本（如有）
+sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null
+
+# 安装依赖
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+
+# 添加 Docker 官方 GPG 密钥
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+# 添加 Docker 源
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# 安装
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# 验证
+docker --version
+docker compose version
+
+# （可选）免 sudo 运行 docker
+sudo usermod -aG docker $USER
+# 重新登录后生效
+```
+
+### 2.6 依赖关系总览图
+
+```
+                        ┌──────────────────────────────────┐
+                        │          Docker Engine            │
+                        │     + Docker Compose V2           │
+                        └───────────────┬──────────────────┘
+                                        │
+                 ┌──────────────────────┼──────────────────────┐
+                 ▼                      ▼                      ▼
+          ┌─────────────┐      ┌──────────────┐      ┌──────────────┐
+          │  oc-mysql    │      │  oc-redis     │      │    oc-app     │
+          │ mysql:8.0    │      │ redis:7-alpine│      │ (本项目镜像)  │
+          └─────────────┘      └──────────────┘      └───────┬──────┘
+                                                             │
+                                                     ┌───────▼──────┐
+                                                     │   Drogon      │
+                                                     │  v1.9.13      │
+                                                     │  (源码编译)    │
+                                                     └───────┬──────┘
+                                                             │
+                              ┌──────────────┬───────────────┼───────────────┐
+                              ▼              ▼               ▼               ▼
+                         libjsoncpp      libssl3        libmysqlclient   libhiredis
+                         zlib1g          curl           ca-certificates
+```
+
+### 2.7 版本锁定与升级策略
+
+| 组件 | 当前锁定版本 | 升级注意事项 |
+|---|---|---|
+| Drogon | v1.9.13 | 关注 CHANGELOG，API 向后兼容性较好 |
+| MySQL | 8.0 | 不跨大版本升级（8.4 LTS 语法有变化） |
+| Redis | 7.x | 小版本直接升级，注意持久化格式兼容 |
+| Dockerfile 基础镜像 | ubuntu:22.04 | 升级到 24.04 需验证库包名变化 |
+
+> **原则**：锁定主版本号，小版本自动跟进；大版本升级前在 Docker 环境中充分测试。
+
+---
+
+## 三、后端架构与模块划分
+
+### 3.1 总体架构图
 
 ```
                           ┌─────────────────────────────┐
@@ -106,7 +282,7 @@
             └──────────┘                        └──────────┘
 ```
 
-### 2.2 模块划分
+### 3.2 模块划分
 
 | 模块 | 职责 | 关键点 |
 |---|---|---|
@@ -120,7 +296,7 @@
 | **AdminModule** | 超管查看全部群、注销任意群 | role=admin 校验 |
 | **Infra** | MySQL 连接池、Redis 客户端、SMTP 客户端、配置加载、日志 | 连接池复用；配置外置 |
 
-### 2.3 WebSocket 消息协议（统一 JSON 信封）
+### 3.3 WebSocket 消息协议（统一 JSON 信封）
 
 ```jsonc
 // 客户端 → 服务端 / 服务端 → 客户端 通用结构
@@ -143,11 +319,11 @@
 
 ---
 
-## 三、数据库结构建议（MySQL）
+## 四、数据库结构建议（MySQL）
 
 > 约定：所有表含 `created_at`、`updated_at`；删除多用状态位（好友）或硬删（群）。字符集 `utf8mb4`。
 
-### 3.1 users — 用户表
+### 4.1 users — 用户表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK AUTO_INCREMENT | 用户 ID |
@@ -160,7 +336,7 @@
 
 索引：`UNIQUE(email)`、`INDEX(nickname)`。
 
-### 3.2 friendships — 好友关系表（双向，存一行）
+### 4.2 friendships — 好友关系表（双向，存一行）
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | |
@@ -171,7 +347,7 @@
 
 约定：始终 `user_a < user_b`，保证一对好友只有一行；`UNIQUE(user_a, user_b)`。删除好友→status=0（保留行以便复用与历史关联）。
 
-### 3.3 friend_requests — 好友申请表
+### 4.3 friend_requests — 好友申请表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | |
@@ -183,7 +359,7 @@
 
 索引：`INDEX(to_user, status)`。
 
-### 3.4 group_chats — 群表
+### 4.4 group_chats — 群表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | 群 ID |
@@ -194,7 +370,7 @@
 
 索引：`INDEX(name)`、`INDEX(owner_id)`。注销群=DELETE（连带成员、消息，事务内硬删）。
 
-### 3.5 group_members — 群成员表
+### 4.5 group_members — 群成员表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | |
@@ -205,7 +381,7 @@
 
 索引：`UNIQUE(group_id, user_id)`、`INDEX(user_id)`。退群=DELETE 该行。
 
-### 3.6 group_requests — 加群申请表
+### 4.6 group_requests — 加群申请表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | |
@@ -216,7 +392,7 @@
 
 索引：`INDEX(group_id, status)`。
 
-### 3.7 single_messages — 单聊消息表
+### 4.7 single_messages — 单聊消息表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | 全局消息 ID |
@@ -229,7 +405,7 @@
 
 索引：`INDEX(conv_key, seq)`。历史分页按 `conv_key` + `seq` 游标向前翻。
 
-### 3.8 group_messages — 群聊消息表
+### 4.8 group_messages — 群聊消息表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | |
@@ -241,7 +417,7 @@
 
 索引：`INDEX(group_id, seq)`。注销群时按 group_id 批量删除。
 
-### 3.9 offline_messages — 离线消息索引表
+### 4.9 offline_messages — 离线消息索引表
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | BIGINT PK | |
@@ -253,7 +429,7 @@
 索引：`INDEX(user_id)`。用户上线后按此表拉取并投递，投递成功后删除对应行。
 > 说明：群离线消息也可按「成员 last_read_seq」方案实现，本期采用离线索引表，逻辑直观。
 
-### 3.10 Redis 键设计
+### 4.10 Redis 键设计
 | Key | 类型 | 用途 |
 |---|---|---|
 | `verifycode:{email}` | String, TTL 5min | 注册验证码 |
@@ -265,7 +441,7 @@
 
 ---
 
-## 四、TODO 开发清单
+## 五、TODO 开发清单
 
 ### 阶段 0：工程脚手架
 - [x] 0.1 初始化 Drogon 项目结构，配置 CMakeLists.txt
@@ -326,45 +502,45 @@
 
 ---
 
-## 五、核心模块验收标准
+## 六、核心模块验收标准
 
-### 5.1 认证模块
+### 6.1 认证模块
 - [ ] 未注册邮箱可收到验证码；验证码 5 分钟后失效；60s 内重复发送被限频拦截。
 - [ ] 验证码错误/过期无法完成注册；密码以 bcrypt 哈希存储（库中无明文）。
 - [ ] 正确邮箱+密码登录返回有效 JWT；错误密码被拒。
 - [ ] 携带过期/伪造 JWT 访问受保护接口返回 401。
 - [ ] **单点登录**：同账号在 B 端登录后，A 端连接收到 `kicked` 并断开，A 端旧 token 失效。
 
-### 5.2 好友模块
+### 6.2 好友模块
 - [ ] A 搜索昵称能命中 B（模糊+分页）；搜索结果不含敏感字段（无密码哈希）。
 - [ ] A 向 B 申请，B 在线时实时收到 `notify_apply`；B 离线时上线后能在申请列表看到。
 - [ ] B 同意后双方互为好友、互相出现在好友列表；B 拒绝则不建立关系。
 - [ ] 删除好友后双方都不再是好友、互不能发消息；重新加为好友后能看到此前历史消息。
 
-### 5.3 群聊模块
+### 6.3 群聊模块
 - [ ] 任意用户可建群且自动成为群主（group_members.role=1）。
 - [ ] 非群主无法审批加群、无法注销群（越权返回 403）。
 - [ ] 群主同意加群后申请人出现在成员列表、member_count 正确 +1。
 - [ ] 成员退群后从成员列表移除、member_count 正确 -1，且不再收到该群消息。
 - [ ] 注销群后：群、成员关系、群消息记录全部从库删除；所有原成员前端不再展示该群。
 
-### 5.4 消息模块
+### 6.4 消息模块
 - [ ] 单聊消息仅收发双方可见，第三方查询不到。
 - [ ] 群消息推送给「当前在群且在线」的所有成员；退群者收不到后续消息。
 - [ ] 接收方离线时消息入离线表，上线后按序拉取且不丢、不重复。
 - [ ] 同一会话消息按 seq 严格有序展示；历史向上滚动能正确分页加载更早消息。
 - [ ] 发送方收到服务端 `ack`（含服务端消息 ID/seq）确认已落库。
 
-### 5.5 在线状态
+### 6.5 在线状态
 - [ ] 好友上线/下线时，在线好友实时收到 `presence` 更新。
 - [ ] 心跳超时的连接被判定离线并清理在线表。
 
-### 5.6 权限模块
+### 6.6 权限模块
 - [ ] 普通用户调用超管接口（查看全部群/注销任意群）返回 403。
 - [ ] 超管能分页查看全部群的元数据，但无任意群消息内容查看接口。
 - [ ] 超管注销任意群效果与群主注销一致（硬删 + 通知原成员）。
 
-### 5.7 工程交付
+### 6.7 工程交付
 - [ ] `cmake && make` 在 Linux 下一键编译通过。
 - [ ] `docker-compose up` 一键拉起 app + MySQL + Redis 并可访问。
 - [ ] 建表 SQL 可幂等初始化库并预置 admin 超管。
@@ -372,7 +548,7 @@
 
 ---
 
-## 六、约定与默认值
+## 七、约定与默认值
 
 1. 密码：bcrypt 加盐哈希；JWT 有效期 7 天；验证码 5 分钟有效、60s 限频。
 2. 消息顺序：服务端用 Redis INCR 生成会话内单调 seq，不依赖客户端时间。

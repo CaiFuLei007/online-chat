@@ -1,65 +1,58 @@
 #pragma once
 
-#include <drogon/drogon.h>
 #include <cstdlib>
+#include <sstream>
 #include <string>
 
-// 配置读取工具
+// 配置读取工具（纯逻辑，无 Drogon 依赖，可独立测试）
 //
-// 策略：环境变量优先，缺省回退 config.json 中 custom_config 的同名键。
-// 用于保护敏感项（JWT 密钥、SMTP 口令等）不进版本库。
+// 策略：环境变量优先，缺省回退 JSON 对象中的点分路径。
 //
 // 使用：
-//   auto secret = Config::get("JWT_SECRET", "jwt.secret");
-//   // 先读 env JWT_SECRET；若为空，再读 custom_config.jwt.secret
+//   auto secret = Config::get("JWT_SECRET", customJson, "jwt.secret", "");
+//   // 先读 env JWT_SECRET；若为空，再按 "jwt.secret" 遍历 JSON；最后走默认值
 namespace online_chat {
 
 class Config
 {
 public:
-    // 读取配置：环境变量优先，回退 custom_config 中的 JSON 路径
-    // envKey       : 环境变量名，如 "JWT_SECRET"
-    // configPath   : custom_config 下的点分路径，如 "jwt.secret"
-    // defaultVal   : 都找不到时的默认值
+    // 读取配置：环境变量优先，回退 JSON 对象的点分路径
+    // envKey     : 环境变量名
+    // root       : JSON 根节点（由调用方从 drogon::app().getCustomConfig() 传入）
+    // configPath : 点分路径，如 "jwt.secret"
+    // defaultVal : 兜底默认值
     static std::string get(const std::string& envKey,
+                           const Json::Value& root,
                            const std::string& configPath,
                            const std::string& defaultVal = "")
     {
-        // 1. 尝试环境变量
+        // 1. 环境变量优先
         const char* envVal = std::getenv(envKey.c_str());
         if (envVal && envVal[0] != '\0')
             return envVal;
 
-        // 2. 尝试 custom_config
-        try
+        // 2. 遍历 JSON 点分路径
+        const Json::Value* node = &root;
+        std::string part;
+        std::istringstream ss(configPath);
+        while (std::getline(ss, part, '.'))
         {
-            const auto& custom = drogon::app().getCustomConfig();
-            // 按 "." 分割路径逐级下钻
-            const Json::Value* node = &custom;
-            std::string part;
-            std::istringstream ss(configPath);
-            while (std::getline(ss, part, '.'))
+            if (!node->isMember(part))
             {
-                if (!node->isMember(part))
-                {
-                    node = nullptr;
-                    break;
-                }
-                node = &((*node)[part]);
+                node = nullptr;
+                break;
             }
-            if (node && node->isString())
-                return node->asString();
+            node = &((*node)[part]);
         }
-        catch (...)
-        {
-            // getCustomConfig 在未加载 config 时可能抛异常，静默处理
-        }
+        if (node && node->isString())
+            return node->asString();
 
         return defaultVal;
     }
 
-    // 读取 int 类型配置（同样环境变量优先）
+    // int 版本
     static int getInt(const std::string& envKey,
+                      const Json::Value& root,
                       const std::string& configPath,
                       int defaultVal = 0)
     {
@@ -70,25 +63,20 @@ public:
             catch (...) {}
         }
 
-        try
+        const Json::Value* node = &root;
+        std::string part;
+        std::istringstream ss(configPath);
+        while (std::getline(ss, part, '.'))
         {
-            const auto& custom = drogon::app().getCustomConfig();
-            const Json::Value* node = &custom;
-            std::string part;
-            std::istringstream ss(configPath);
-            while (std::getline(ss, part, '.'))
+            if (!node->isMember(part))
             {
-                if (!node->isMember(part))
-                {
-                    node = nullptr;
-                    break;
-                }
-                node = &((*node)[part]);
+                node = nullptr;
+                break;
             }
-            if (node && node->isInt())
-                return node->asInt();
+            node = &((*node)[part]);
         }
-        catch (...) {}
+        if (node && node->isInt())
+            return node->asInt();
 
         return defaultVal;
     }
