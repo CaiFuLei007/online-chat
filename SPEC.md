@@ -268,7 +268,7 @@
 ## 四、TODO 开发清单
 
 ### 阶段 0：工程脚手架
-- [ ] 0.1 初始化 Drogon 项目结构，配置 CMakeLists.txt
+- [x] 0.1 初始化 Drogon 项目结构，配置 CMakeLists.txt
 - [ ] 0.2 编写 `config.json`（DB/Redis/SMTP/JWT 密钥/端口）
 - [ ] 0.3 封装 MySQL 连接池、Redis 客户端、SMTP 客户端
 - [ ] 0.4 统一日志、统一 JSON 响应结构、统一错误码

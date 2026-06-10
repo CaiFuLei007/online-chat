@@ -14,3 +14,11 @@ online_chat
 # Drogon ORM 生成的模型代码（由 model.json 生成，不入库）
 /models/*.h
 /models/*.cc
+
+# 环境变量文件（可能含密钥）
+.env
+*.env
+
+# Docker 数据卷
+docker/mysql_data/
+docker/redis_data/

@@ -1,0 +1,91 @@
+/* online-chat 运行时配置（Drogon loadConfigFile 加载）
+ *
+ * 说明：
+ *   - 所有敏感项（JWT 密钥、SMTP 口令、DB 密码等）均由环境变量注入，
+ *     本文件仅保留非敏感默认值，可安全提交至公开仓库。
+ *   - 敏感项环境变量名见各处注释。
+ */
+{
+    // ---------------- 监听端口 ----------------
+    "listeners": [
+        {
+            "address": "0.0.0.0",
+            "port": 8080,
+            "https": false
+        }
+    ],
+
+    // ---------------- MySQL 连接池（Drogon 管理） ----------------
+    "db_clients": [
+        {
+            "name": "default",
+            "rdbms": "mysql",
+            "host": "127.0.0.1",
+            "port": 3306,
+            "dbname": "online_chat",
+            "user": "online_chat",
+            "passwd": "",          // 环境变量: MYSQL_PASSWORD
+            "is_fast": false,
+            "connection_number": 10,
+            "timeout": -1.0,
+            "character_set": "utf8mb4"
+        }
+    ],
+
+    // ---------------- Redis 连接池（Drogon 内置） ----------------
+    // Drogon >= 1.7 原生支持，通过 redis_clients 配置
+    "redis_clients": [
+        {
+            "name": "default",
+            "host": "127.0.0.1",
+            "port": 6379,
+            "password": "",        // 环境变量: REDIS_PASSWORD（无密码留空）
+            "db": 0,
+            "number_of_connections": 10,
+            "timeout": -1.0
+        }
+    ],
+
+    // ---------------- 应用与日志 ----------------
+    "app": {
+        "threads_num": 0,
+        "document_root": "./frontend",
+        "max_connections": 100000,
+        "load_dynamic_views": false,
+        "enable_session": false,
+        "client_max_body_size": "1M",
+        "log": {
+            "log_path": "",
+            "log_level": "DEBUG"
+        }
+    },
+
+    // ---------------- 业务自定义配置 ----------------
+    "custom_config": {
+        "jwt": {
+            "secret": "",          // 环境变量: JWT_SECRET（必填）
+            "expire_seconds": 604800,
+            "issuer": "online-chat"
+        },
+        "smtp": {
+            "host": "",            // 环境变量: SMTP_HOST
+            "port": 465,
+            "use_ssl": true,
+            "username": "",        // 环境变量: SMTP_USERNAME
+            "password": "",        // 环境变量: SMTP_PASSWORD
+            "from_name": "online-chat",
+            "from_email": ""       // 环境变量: SMTP_FROM_EMAIL
+        },
+        "verify_code": {
+            "length": 6,
+            "ttl_seconds": 300,
+            "resend_interval_seconds": 60
+        },
+        "message": {
+            "history_page_size": 30
+        },
+        "search": {
+            "page_size": 20
+        }
+    }
+}

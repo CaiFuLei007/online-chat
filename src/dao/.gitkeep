@@ -1,8 +1,0 @@
-# 数据访问层 (DAO)
-#
-# 封装 MySQL / Redis 的具体读写，向上为 service 提供数据操作接口，
-# 隔离 SQL 与缓存细节。
-#
-# 预计文件（后续阶段创建）：
-#   user_dao / friend_dao / group_dao / message_dao / offline_dao  (MySQL)
-#   redis_dao（验证码、会话、在线表、消息序号 INCR）

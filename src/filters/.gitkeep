@@ -1,5 +1,0 @@
-# 过滤器 (Drogon HttpFilter)
-#
-# 放置统一的请求拦截器，例如：
-#   jwt_auth_filter.{h,cc}   解析并校验 Authorization: Bearer <token>，
-#                            注入当前 userId / role，未通过返回 401
