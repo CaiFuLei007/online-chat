@@ -1,5 +1,7 @@
 #pragma once
 
+#include <json/json.h>
+
 #include <cstdlib>
 #include <sstream>
 #include <string>
@@ -37,7 +39,7 @@ public:
         std::istringstream ss(configPath);
         while (std::getline(ss, part, '.'))
         {
-            if (!node->isMember(part))
+            if (!node->isObject() || !node->isMember(part))
             {
                 node = nullptr;
                 break;
@@ -68,7 +70,7 @@ public:
         std::istringstream ss(configPath);
         while (std::getline(ss, part, '.'))
         {
-            if (!node->isMember(part))
+            if (!node->isObject() || !node->isMember(part))
             {
                 node = nullptr;
                 break;

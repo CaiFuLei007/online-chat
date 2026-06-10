@@ -22,3 +22,4 @@ online_chat
 # Docker 数据卷
 docker/mysql_data/
 docker/redis_data/
+tests/build/

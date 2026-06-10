@@ -1,8 +1,8 @@
 # SPEC.md — 网页版聊天工具（类微信）技术规格说明书
 
-> 版本：v1.0
-> 日期：2026-06-09
-> 状态：需求已确认，待开发
+> 版本：v1.1
+> 日期：2026-06-10
+> 状态：阶段 0 工程脚手架已完成，下一阶段：认证模块
 > 后端语言：C++（Drogon 框架） | 前端：原生 HTML/CSS/JS | 存储：MySQL + Redis
 
 ---
@@ -445,11 +445,11 @@ sudo usermod -aG docker $USER
 
 ### 阶段 0：工程脚手架
 - [x] 0.1 初始化 Drogon 项目结构，配置 CMakeLists.txt
-- [ ] 0.2 编写 `config.json`（DB/Redis/SMTP/JWT 密钥/端口）
-- [ ] 0.3 封装 MySQL 连接池、Redis 客户端、SMTP 客户端
-- [ ] 0.4 统一日志、统一 JSON 响应结构、统一错误码
-- [ ] 0.5 编写建表 SQL（含预置 admin 超管账号）
-- [ ] 0.6 Dockerfile + docker-compose（app + MySQL + Redis）
+- [x] 0.2 编写 `config.json`（DB/Redis/SMTP/JWT 密钥/端口）
+- [x] 0.3 封装 MySQL 连接池、Redis 客户端、SMTP 客户端
+- [x] 0.4 统一日志、统一 JSON 响应结构、统一错误码
+- [x] 0.5 编写建表 SQL（含预置 admin 超管账号）
+- [x] 0.6 Dockerfile + docker-compose（app + MySQL + Redis）
 
 ### 阶段 1：认证模块
 - [ ] 1.1 发送邮箱验证码接口（写 Redis + 限频 + SMTP）
