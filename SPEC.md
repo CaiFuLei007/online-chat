@@ -1,8 +1,8 @@
 # SPEC.md — 网页版聊天工具（类微信）技术规格说明书
 
-> 版本：v1.1
+> 版本：v1.2
 > 日期：2026-06-10
-> 状态：阶段 0 工程脚手架已完成，下一阶段：认证模块
+> 状态：阶段 0~1 已完成，下一阶段：WebSocket 网关
 > 后端语言：C++（Drogon 框架） | 前端：原生 HTML/CSS/JS | 存储：MySQL + Redis
 
 ---
@@ -452,11 +452,11 @@ sudo usermod -aG docker $USER
 - [x] 0.6 Dockerfile + docker-compose（app + MySQL + Redis）
 
 ### 阶段 1：认证模块
-- [ ] 1.1 发送邮箱验证码接口（写 Redis + 限频 + SMTP）
-- [ ] 1.2 注册接口（校验验证码、bcrypt 哈希、写 users）
-- [ ] 1.3 登录接口（校验密码、签发 JWT、写 Redis session）
-- [ ] 1.4 JWT 鉴权 Filter（HTTP）与 WS 握手鉴权
-- [ ] 1.5 单点登录挤下线逻辑（新登录覆盖 session + kick 旧连接）
+- [x] 1.1 发送邮箱验证码接口（写 Redis + 限频 + SMTP）
+- [x] 1.2 注册接口（校验验证码、bcrypt 哈希、写 users）
+- [x] 1.3 登录接口（校验密码、签发 JWT、写 Redis session）
+- [x] 1.4 JWT 鉴权 Filter（HTTP）与 WS 握手鉴权
+- [x] 1.5 单点登录挤下线逻辑（新登录覆盖 session + kick 旧连接）
 
 ### 阶段 2：WebSocket 网关
 - [ ] 2.1 连接注册/注销（userId ↔ 连接映射）

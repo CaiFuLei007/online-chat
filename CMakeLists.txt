@@ -21,9 +21,28 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ---------------------------------------------------------------------------
 # 依赖：Drogon（会一并引入 Trantor、jsoncpp 等传递依赖）
-# 后续阶段再按需链接 MySQL / Redis / SMTP / JWT 等客户端库
 # ---------------------------------------------------------------------------
 find_package(Drogon CONFIG REQUIRED)
+
+# ---------------------------------------------------------------------------
+# jwt-cpp（header-only JWT 库，FetchContent 自动拉取）
+# ---------------------------------------------------------------------------
+include(FetchContent)
+FetchContent_Declare(
+    jwt-cpp
+    GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
+    GIT_TAG        v0.7.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(jwt-cpp)
+
+# ---------------------------------------------------------------------------
+# libcrypt（系统库，提供 crypt() 用于 bcrypt 哈希）
+# ---------------------------------------------------------------------------
+find_library(CRYPT_LIB crypt)
+if(NOT CRYPT_LIB)
+    message(FATAL_ERROR "libcrypt not found. Install with: sudo apt-get install libcrypt-dev")
+endif()
 
 # ---------------------------------------------------------------------------
 # 源码收集：按模块分目录组织，统一递归收集 src 下的所有 .cc
@@ -45,4 +64,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Drogon::Drogon)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    Drogon::Drogon
+    jwt-cpp::jwt-cpp
+    ${CRYPT_LIB}
+)

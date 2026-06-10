@@ -8,13 +8,30 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(GTest REQUIRED)
 find_package(jsoncpp REQUIRED)
 
+# jwt-cpp（FetchContent 拉取，与主项目保持一致）
+include(FetchContent)
+FetchContent_Declare(
+    jwt-cpp
+    GIT_REPOSITORY https://github.com/Thalhammer/jwt-cpp.git
+    GIT_TAG        v0.7.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(jwt-cpp)
+
+# libcrypt（bcrypt）
+find_library(CRYPT_LIB crypt)
+if(NOT CRYPT_LIB)
+    message(FATAL_ERROR "libcrypt not found")
+endif()
+
 # ---- 测试源文件 ----
-# 注意：这些测试只测纯逻辑头文件，不链接 Drogon
 add_executable(oc_tests
     test_errors.cpp
     test_config.cpp
     test_ws_protocol.cpp
     test_smtp_util.cpp
+    test_jwt.cpp
+    test_password.cpp
 )
 
 target_include_directories(oc_tests PRIVATE
@@ -25,6 +42,8 @@ target_link_libraries(oc_tests PRIVATE
     GTest::GTest
     GTest::Main
     jsoncpp_lib
+    jwt-cpp::jwt-cpp
+    ${CRYPT_LIB}
 )
 
 enable_testing()
