@@ -2,17 +2,13 @@
 #include "dao/db_client.h"
 #include "dao/redis_client.h"
 #include "utils/errors.h"
+#include "utils/conversation.h"
 
 #include <drogon/drogon.h>
 
 namespace online_chat {
 
-// 辅助：构造 conv_key（单聊会话键：min(uid)-max(uid)）
-static std::string convKey(int64_t a, int64_t b)
-{
-    if (a > b) std::swap(a, b);
-    return std::to_string(a) + "-" + std::to_string(b);
-}
+// convKey 已提取到 utils/conversation.h，此处直接使用 online_chat::convKey
 
 // ---- 查找好友关系 ----
 void FriendService::findFriendship(
