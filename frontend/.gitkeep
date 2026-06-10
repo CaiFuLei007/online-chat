@@ -1,0 +1,4 @@
+# 前端静态资源（阶段 7）
+#
+# 原生 HTML/CSS/JS。Drogon 通过 document_root 将本目录作为静态站点根，
+# 浏览器经 WebSocket 与后端通信。

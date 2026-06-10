@@ -1,0 +1,7 @@
+# 通用工具
+#
+# 与业务无关的可复用组件，例如：
+#   jwt_util.{h,cc}      JWT 签发/校验
+#   password_util.{h,cc} bcrypt 加盐哈希/校验
+#   response_util.{h,cc} 统一 JSON 响应结构与错误码
+#   ws_protocol.h        WebSocket 消息信封 type/seq/data 定义

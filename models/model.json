@@ -1,0 +1,23 @@
+/* Drogon ORM 模型生成配置（drogon_ctl create model models 使用）
+ *
+ * 阶段 0.1：仅占位，确认目录与生成流程。
+ * 阶段 0.5：补全数据库连接与 tables 列表，生成各表的 ORM 模型类
+ *           （生成的 .h/.cc 已在 .gitignore 中忽略，不入库）。
+ */
+{
+    "rdbms": "mysql",
+    "host": "127.0.0.1",
+    "port": 3306,
+    "dbname": "online_chat",
+    "user": "online_chat",
+    "passwd": "",
+    "client_encoding": "utf8mb4",
+    "table": [],
+    "convertstr": false,
+    "relationships": {
+        "enabled": false
+    },
+    "restful_api_controllers": {
+        "enabled": false
+    }
+}

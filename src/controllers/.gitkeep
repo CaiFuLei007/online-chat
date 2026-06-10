@@ -1,0 +1,14 @@
+# HTTP 控制器 + WebSocket 控制器
+#
+# 放置 Drogon 的 HttpController / WebSocketController 派生类。
+# 控制器只做：参数解析、鉴权结果读取、调用 service、组织响应，
+# 不写业务逻辑（业务逻辑在 src/services）。
+#
+# 预计文件（后续阶段创建）：
+#   auth_controller.{h,cc}     注册/验证码/登录
+#   user_controller.{h,cc}     资料/搜索
+#   friend_controller.{h,cc}   好友申请/列表/删除
+#   group_controller.{h,cc}    建群/搜索/加群/退群/注销
+#   message_controller.{h,cc}  历史消息分页查询
+#   admin_controller.{h,cc}    超管：全部群列表/注销任意群
+#   ws_gateway.{h,cc}          WebSocket 网关（连接/路由/心跳/挤下线）

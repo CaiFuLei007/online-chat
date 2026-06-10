@@ -1,0 +1,11 @@
+# 业务逻辑层 (Service)
+#
+# 承载核心业务规则，被控制器与 WebSocket 网关调用，向下依赖 dao。
+#
+# 预计文件（后续阶段创建）：
+#   auth_service.{h,cc}      验证码/注册/登录/JWT/单点登录
+#   user_service.{h,cc}      资料/按昵称模糊搜索
+#   friend_service.{h,cc}    好友申请/审批/列表/双向解除
+#   group_service.{h,cc}     建群/加群审批/退群/注销(事务硬删)
+#   message_service.{h,cc}   单聊/群聊收发/离线暂存/历史分页/序号生成
+#   online_service.{h,cc}    在线表维护/上下线推送

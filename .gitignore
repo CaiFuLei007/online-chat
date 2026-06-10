@@ -1,0 +1,16 @@
+# 构建产物
+/build/
+*.o
+*.a
+*.so
+online_chat
+
+# 编译数据库 / IDE 缓存
+/compile_commands.json
+.cache/
+.vscode/
+.idea/
+
+# Drogon ORM 生成的模型代码（由 model.json 生成，不入库）
+/models/*.h
+/models/*.cc

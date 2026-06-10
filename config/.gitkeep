@@ -1,0 +1,4 @@
+# 运行时配置目录
+#
+# 阶段 0.2 将在此放置 config.json（监听端口、MySQL、Redis、SMTP、JWT 密钥、日志等）。
+# main.cc 启动时加载 ./config/config.json（相对可执行文件所在的构建目录）。
