@@ -435,7 +435,318 @@ Content-Type: application/json
 
 ---
 
-## 四、WebSocket 网关
+## 四、群聊模块（需 JwtFilter）
+
+> 以下所有接口需在请求头携带 JWT：
+> `Authorization: Bearer <token>`
+
+### 4.1 创建群聊
+
+**`POST /api/group/create`**
+
+**请求头**：
+
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**请求体**：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| name | string | ✅ | 群名称 |
+
+```json
+{
+  "name": "前端技术交流群"
+}
+```
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "groupId": 1,
+    "message": "群创建成功"
+  }
+}
+```
+
+---
+
+### 4.2 按群名搜索群
+
+**`GET /api/group/search?keyword={keyword}&page={page}`**
+
+**Query 参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| keyword | string | ✅ | 搜索关键词（模糊匹配群名） |
+| page | int | ❌ | 页码，默认 1 |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      { "id": 1, "name": "前端技术交流群", "ownerId": 1001, "memberCount": 15 },
+      { "id": 3, "name": "前端面试群", "ownerId": 1005, "memberCount": 8 }
+    ],
+    "total": 2,
+    "page": 1
+  }
+}
+```
+
+---
+
+### 4.3 发送加群申请
+
+**`POST /api/group/join/{groupId}`**
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| groupId | int64 | 群 ID |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "requestId": 1,
+    "message": "加群申请已发送"
+  }
+}
+```
+
+**失败响应**：
+
+| code | HTTP Status | 说明 |
+|---|---|---|
+| 4001 | 404 | 群不存在 |
+| 4002 | 400 | 已在群中 |
+| 4005 | 400 | 已发送过申请 |
+
+---
+
+### 4.4 获取群的待处理申请（群主）
+
+**`GET /api/group/requests/{groupId}`**
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| groupId | int64 | 群 ID |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      { "id": 1, "fromUser": 1003, "nickname": "Bob", "createdAt": "2026-06-10 15:00:00" }
+    ]
+  }
+}
+```
+
+**失败响应**：
+
+| code | HTTP Status | 说明 |
+|---|---|---|
+| 4001 | 404 | 群不存在 |
+| 4004 | 403 | 只有群主可以查看 |
+
+---
+
+### 4.5 同意加群申请（群主）
+
+**`POST /api/group/accept/{requestId}`**
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| requestId | int64 | 申请 ID |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "message": "已同意"
+  }
+}
+```
+
+**失败响应**：
+
+| code | HTTP Status | 说明 |
+|---|---|---|
+| 1004 | 404 | 申请不存在 |
+| 1001 | 400 | 该申请已处理 |
+| 4004 | 403 | 不是群主 |
+
+---
+
+### 4.6 拒绝加群申请（群主）
+
+**`POST /api/group/reject/{requestId}`**
+
+参数与响应格式同 4.5，成功时 `data.message` 为 `"已拒绝"`。
+
+---
+
+### 4.7 退群
+
+**`POST /api/group/leave/{groupId}`**
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| groupId | int64 | 群 ID |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "message": "已退群"
+  }
+}
+```
+
+**失败响应**：
+
+| code | HTTP Status | 说明 |
+|---|---|---|
+| 4001 | 404 | 群不存在 |
+| 4003 | 400 | 不在群中 |
+| 1003 | 403 | 群主不能退群 |
+
+---
+
+### 4.8 群成员列表
+
+**`GET /api/group/members/{groupId}`**
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| groupId | int64 | 群 ID |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      { "id": 1001, "nickname": "Alice", "role": 1 },
+      { "id": 1002, "nickname": "Bob", "role": 0 }
+    ],
+    "total": 2
+  }
+}
+```
+
+> `role=1` 为群主，`role=0` 为普通成员。列表按 role DESC 排序，群主在前。
+
+---
+
+### 4.9 注销群（群主）
+
+**`DELETE /api/group/{groupId}`**
+
+硬删除群、成员关系、群消息记录。不可恢复。
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| groupId | int64 | 群 ID |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "message": "群已注销"
+  }
+}
+```
+
+**失败响应**：
+
+| code | HTTP Status | 说明 |
+|---|---|---|
+| 4001 | 404 | 群不存在 |
+| 4004 | 403 | 只有群主可以注销 |
+
+---
+
+### 4.10 我加入的群列表
+
+**`GET /api/group/my`**
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      { "id": 1, "name": "前端技术交流群", "memberCount": 15, "role": 1 },
+      { "id": 2, "name": "项目讨论组", "memberCount": 5, "role": 0 }
+    ]
+  }
+}
+```
+
+---
+
+## 五、WebSocket 网关
 
 ### 4.1 连接
 
@@ -521,7 +832,7 @@ Content-Type: application/json
 
 ---
 
-## 五、错误码参考
+## 六、错误码参考
 
 | code | 名称 | HTTP Status | 说明 |
 |---|---|---|---|
@@ -552,7 +863,7 @@ Content-Type: application/json
 
 ---
 
-## 六、鉴权说明
+## 七、鉴权说明
 
 ### HTTP 接口鉴权
 

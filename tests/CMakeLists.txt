@@ -34,6 +34,7 @@ add_executable(oc_tests
     test_password.cpp
     test_ws_gateway.cpp
     test_friend_util.cpp
+    test_group_util.cpp
 )
 
 target_include_directories(oc_tests PRIVATE
