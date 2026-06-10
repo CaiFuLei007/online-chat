@@ -1,4 +1,5 @@
 #include "controllers/ws_gateway.h"
+#include "services/message_service.h"
 #include "utils/jwt_util.h"
 #include "utils/ws_protocol.h"
 #include "utils/errors.h"
@@ -119,7 +120,7 @@ void WsGateway::handleConnectionClosed(
     }
 }
 
-// ---- 消息路由（阶段 2 只做骨架，阶段 5 实现具体逻辑） ----
+// ---- 消息路由 ----
 void WsGateway::routeMessage(
     const drogon::WebSocketConnectionPtr& conn,
     const WsContext& ctx,
@@ -129,22 +130,39 @@ void WsGateway::routeMessage(
 {
     if (type == ws::CHAT_SINGLE)
     {
-        // 阶段 5 实现：单聊消息收发
-        LOG_DEBUG << "CHAT_SINGLE from userId=" << ctx.userId
-                  << " to=" << data.get("to", 0).asInt64();
-        // 临时回显确认
-        Json::Value ack;
-        ack["message"] = "chat_single not implemented yet";
-        conn->send(ws::makeEnvelope(ws::ACK, seq, ack));
+        // 单聊：to + content
+        int64_t toUser = data.get("to", 0).asInt64();
+        std::string content = data.get("content", "").asString();
+        MessageService::sendSingleMessage(ctx.userId, toUser, content,
+            [conn, seq](const Json::Value& ackData)
+            {
+                conn->send(ws::makeEnvelope(ws::ACK, seq, ackData));
+            },
+            [conn, seq](ErrorCode code, const std::string& msg)
+            {
+                Json::Value err;
+                err["code"] = static_cast<int>(code);
+                err["message"] = msg;
+                conn->send(ws::makeEnvelope(ws::ERROR, seq, err));
+            });
     }
     else if (type == ws::CHAT_GROUP)
     {
-        // 阶段 5 实现：群聊消息广播
-        LOG_DEBUG << "CHAT_GROUP from userId=" << ctx.userId
-                  << " groupId=" << data.get("groupId", 0).asInt64();
-        Json::Value ack;
-        ack["message"] = "chat_group not implemented yet";
-        conn->send(ws::makeEnvelope(ws::ACK, seq, ack));
+        // 群聊：groupId + content
+        int64_t groupId = data.get("groupId", 0).asInt64();
+        std::string content = data.get("content", "").asString();
+        MessageService::sendGroupMessage(ctx.userId, groupId, content,
+            [conn, seq](const Json::Value& ackData)
+            {
+                conn->send(ws::makeEnvelope(ws::ACK, seq, ackData));
+            },
+            [conn, seq](ErrorCode code, const std::string& msg)
+            {
+                Json::Value err;
+                err["code"] = static_cast<int>(code);
+                err["message"] = msg;
+                conn->send(ws::makeEnvelope(ws::ERROR, seq, err));
+            });
     }
     else
     {

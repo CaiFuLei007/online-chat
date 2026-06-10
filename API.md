@@ -832,7 +832,212 @@ Content-Type: application/json
 
 ---
 
-## 六、错误码参考
+## 六、消息模块（需 JwtFilter）
+
+> 以下所有接口需在请求头携带 JWT：
+> `Authorization: Bearer <token>`
+
+### 6.1 单聊历史消息
+
+**`GET /api/message/single/history?peerId={peerId}&beforeSeq={beforeSeq}&limit={limit}`**
+
+按游标分页加载单聊历史消息（最新消息在前）。
+
+**Query 参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| peerId | int64 | ✅ | 对方用户 ID |
+| beforeSeq | int64 | ❌ | 游标序号，加载此 seq 之前的消息。首次传 0 或不传 |
+| limit | int | ❌ | 每页条数，默认 30，最大 100 |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      {
+        "id": 100,
+        "from": 1001,
+        "to": 1002,
+        "content": "你好",
+        "seq": 5,
+        "createdAt": "2026-06-10 12:00:00"
+      }
+    ],
+    "hasMore": true
+  }
+}
+```
+
+> `hasMore=true` 表示还有更早的消息，下次请求传 `beforeSeq=5` 继续加载。
+
+---
+
+### 6.2 群聊历史消息
+
+**`GET /api/message/group/history?groupId={groupId}&beforeSeq={beforeSeq}&limit={limit}`**
+
+按游标分页加载群聊历史消息。
+
+**Query 参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| groupId | int64 | ✅ | 群 ID |
+| beforeSeq | int64 | ❌ | 游标序号。首次传 0 或不传 |
+| limit | int | ❌ | 每页条数，默认 30，最大 100 |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      {
+        "id": 200,
+        "groupId": 42,
+        "from": 1001,
+        "content": "大家好",
+        "seq": 3,
+        "createdAt": "2026-06-10 12:00:00"
+      }
+    ],
+    "hasMore": false
+  }
+}
+```
+
+---
+
+### 6.3 拉取离线消息
+
+**`GET /api/message/offline`**
+
+用户上线后调用，拉取所有离线期间未投递的消息。拉取后自动删除离线索引。
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "messages": [
+      {
+        "type": "chat_single",
+        "id": 100,
+        "from": 1002,
+        "content": "你不在的时候我发的消息",
+        "seq": 5
+      },
+      {
+        "type": "chat_group",
+        "id": 200,
+        "groupId": 42,
+        "from": 1003,
+        "content": "群消息",
+        "seq": 3
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 6.4 WebSocket 消息收发
+
+消息通过 WebSocket 实时收发，详见 [四、WebSocket 网关](#四websocket-网关)。
+
+**发送单聊消息**（客户端 → 服务端）：
+
+```json
+{
+  "type": "chat_single",
+  "seq": 1,
+  "data": {
+    "to": 1002,
+    "content": "你好"
+  }
+}
+```
+
+**服务端确认**（ack）：
+
+```json
+{
+  "type": "ack",
+  "seq": 1,
+  "data": {
+    "id": 100,
+    "from": 1001,
+    "to": 1002,
+    "content": "你好",
+    "seq": 5
+  }
+}
+```
+
+**收到单聊消息**（服务端 → 接收方）：
+
+```json
+{
+  "type": "chat_single",
+  "seq": 5,
+  "data": {
+    "id": 100,
+    "from": 1001,
+    "to": 1002,
+    "content": "你好",
+    "seq": 5
+  }
+}
+```
+
+**发送群聊消息**（客户端 → 服务端）：
+
+```json
+{
+  "type": "chat_group",
+  "seq": 2,
+  "data": {
+    "groupId": 42,
+    "content": "大家好"
+  }
+}
+```
+
+**收到群聊消息**（服务端 → 群成员）：
+
+```json
+{
+  "type": "chat_group",
+  "seq": 3,
+  "data": {
+    "id": 200,
+    "groupId": 42,
+    "from": 1001,
+    "content": "大家好",
+    "seq": 3
+  }
+}
+```
+
+---
+
+## 七、错误码参考
 
 | code | 名称 | HTTP Status | 说明 |
 |---|---|---|---|
@@ -863,7 +1068,7 @@ Content-Type: application/json
 
 ---
 
-## 七、鉴权说明
+## 八、鉴权说明
 
 ### HTTP 接口鉴权
 
