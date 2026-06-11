@@ -36,6 +36,7 @@ add_executable(oc_tests
     test_friend_util.cpp
     test_group_util.cpp
     test_message_util.cpp
+    test_admin_util.cpp
 )
 
 target_include_directories(oc_tests PRIVATE

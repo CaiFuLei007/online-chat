@@ -1037,7 +1037,95 @@ Content-Type: application/json
 
 ---
 
-## 七、错误码参考
+## 七、管理模块（需超管 JwtFilter）
+
+> 以下接口需超管（`role=1`）权限，请求头携带 JWT：
+> `Authorization: Bearer <token>`
+>
+> 普通用户调用返回 `code=1003`（Forbidden）。
+
+### 7.1 全部群列表（超管）
+
+**`GET /api/admin/groups?page={page}`**
+
+查看全部群聊的元数据，含群主昵称、成员数等。不含群内聊天内容。
+
+**Query 参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| page | int | ❌ | 页码，默认 1 |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "name": "前端技术交流群",
+        "ownerId": 1001,
+        "ownerName": "Alice",
+        "memberCount": 15,
+        "createdAt": "2026-06-10 12:00:00"
+      }
+    ],
+    "total": 50,
+    "page": 1,
+    "pageSize": 20
+  }
+}
+```
+
+**失败响应**：
+
+| code | HTTP Status | 说明 |
+|---|---|---|
+| 1003 | 403 | 仅超管可访问 |
+
+---
+
+### 7.2 注销任意群（超管）
+
+**`DELETE /api/admin/groups/{groupId}`**
+
+超管可注销任意群聊，硬删除群、成员关系、群消息记录。不可恢复。
+
+**路径参数**：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| groupId | int64 | 群 ID |
+
+**请求头**：`Authorization: Bearer <token>`
+
+**成功响应**（200）：
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "message": "群已注销"
+  }
+}
+```
+
+**失败响应**：
+
+| code | HTTP Status | 说明 |
+|---|---|---|
+| 1003 | 403 | 仅超管可访问 |
+| 1004 | 404 | 群不存在 |
+
+---
+
+## 八、错误码参考
 
 | code | 名称 | HTTP Status | 说明 |
 |---|---|---|---|
@@ -1068,7 +1156,7 @@ Content-Type: application/json
 
 ---
 
-## 八、鉴权说明
+## 九、鉴权说明
 
 ### HTTP 接口鉴权
 
