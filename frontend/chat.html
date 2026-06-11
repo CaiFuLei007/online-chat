@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>online-chat</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div class="chat-app">
+    <!-- 侧栏 -->
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <span class="avatar" id="me-avatar">?</span>
+        <div class="me-info">
+          <div class="me-name" id="me-name">…</div>
+          <div class="me-email" id="me-email"></div>
+        </div>
+        <button class="icon-btn" id="btn-search" aria-label="搜索用户或群" title="搜索 / 添加">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btn-notify" aria-label="申请通知" title="申请通知">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+          </svg>
+          <span class="badge" id="notify-badge" data-count="0"></span>
+        </button>
+        <button class="icon-btn" id="btn-logout" aria-label="退出登录" title="退出登录">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="conn-banner" id="conn-banner">连接已断开，正在重连…</div>
+
+      <nav class="sidebar-tabs" role="tablist">
+        <button class="sidebar-tab active" id="tab-friends" role="tab" aria-selected="true">好友</button>
+        <button class="sidebar-tab" id="tab-groups" role="tab" aria-selected="false">群聊</button>
+      </nav>
+
+      <div class="list-scroll" id="friend-list" role="list"></div>
+      <div class="list-scroll" id="group-list" role="list" hidden></div>
+    </aside>
+
+    <!-- 会话区 -->
+    <main class="chat-main" id="chat-main">
+      <div class="chat-welcome" id="chat-welcome">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+        </svg>
+        <p>选择一个好友或群聊，开始对话</p>
+      </div>
+
+      <div id="chat-pane" hidden style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <header class="chat-header">
+          <button class="icon-btn back-btn" id="btn-back" aria-label="返回列表">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m15 18-6-6 6-6"/>
+            </svg>
+          </button>
+          <div class="chat-title">
+            <h2 id="chat-title-name"></h2>
+            <span class="chat-status" id="chat-title-status"></span>
+          </div>
+          <button class="icon-btn" id="btn-conv-action" aria-label="会话操作" title="会话操作">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+            </svg>
+          </button>
+        </header>
+
+        <div class="msg-scroll" id="msg-scroll">
+          <div class="msg-loading" id="msg-loading" hidden>加载中…</div>
+          <div id="msg-list"></div>
+        </div>
+
+        <footer class="chat-input-bar">
+          <textarea id="msg-input" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行" aria-label="消息输入框"></textarea>
+          <button class="btn btn-primary" id="btn-send" aria-label="发送消息">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+            </svg>
+            发送
+          </button>
+        </footer>
+      </div>
+    </main>
+  </div>
+
+  <!-- 搜索 / 添加 弹窗 -->
+  <div class="modal-overlay" id="modal-search" role="dialog" aria-modal="true" aria-labelledby="modal-search-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-search-title">搜索 / 添加</h3>
+        <button class="modal-close" data-close="modal-search" aria-label="关闭">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-tabs">
+          <button class="modal-tab active" id="search-tab-user">找用户</button>
+          <button class="modal-tab" id="search-tab-group">找群</button>
+          <button class="modal-tab" id="search-tab-create">建群</button>
+        </div>
+
+        <div id="search-pane-user">
+          <div class="search-bar">
+            <input type="text" id="search-user-input" placeholder="按昵称搜索用户" aria-label="搜索用户">
+            <button class="btn btn-primary" id="search-user-btn">搜索</button>
+          </div>
+          <div id="search-user-results"></div>
+          <div class="pager" id="search-user-pager" hidden>
+            <button class="btn btn-ghost btn-sm" id="user-prev">上一页</button>
+            <span class="pager-info" id="user-page-info"></span>
+            <button class="btn btn-ghost btn-sm" id="user-next">下一页</button>
+          </div>
+        </div>
+
+        <div id="search-pane-group" hidden>
+          <div class="search-bar">
+            <input type="text" id="search-group-input" placeholder="按群名搜索群聊" aria-label="搜索群聊">
+            <button class="btn btn-primary" id="search-group-btn">搜索</button>
+          </div>
+          <div id="search-group-results"></div>
+          <div class="pager" id="search-group-pager" hidden>
+            <button class="btn btn-ghost btn-sm" id="group-prev">上一页</button>
+            <span class="pager-info" id="group-page-info"></span>
+            <button class="btn btn-ghost btn-sm" id="group-next">下一页</button>
+          </div>
+        </div>
+
+        <div id="search-pane-create" hidden>
+          <div class="field">
+            <label for="create-group-name">群名称</label>
+            <input type="text" id="create-group-name" maxlength="64" placeholder="给新群起个名字">
+          </div>
+          <button class="btn btn-cta btn-block" id="create-group-btn">创建群聊</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 申请通知 弹窗 -->
+  <div class="modal-overlay" id="modal-notify" role="dialog" aria-modal="true" aria-labelledby="modal-notify-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-notify-title">申请通知</h3>
+        <button class="modal-close" data-close="modal-notify" aria-label="关闭">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-tabs">
+          <button class="modal-tab active" id="notify-tab-friend">好友申请</button>
+          <button class="modal-tab" id="notify-tab-group">加群申请</button>
+        </div>
+        <div id="notify-pane-friend"></div>
+        <div id="notify-pane-group" hidden></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 群成员 / 会话操作 弹窗 -->
+  <div class="modal-overlay" id="modal-conv" role="dialog" aria-modal="true" aria-labelledby="modal-conv-title">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-conv-title">会话信息</h3>
+        <button class="modal-close" data-close="modal-conv" aria-label="关闭">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body" id="modal-conv-body"></div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/ws.js"></script>
+  <script src="js/chat.js"></script>
+</body>
+</html>
