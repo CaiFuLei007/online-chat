@@ -1,6 +1,10 @@
 #pragma once
 
 #include <drogon/HttpController.h>
+using drogon::Get;
+using drogon::Post;
+using drogon::Delete;
+using drogon::Put;
 
 // 认证控制器
 //

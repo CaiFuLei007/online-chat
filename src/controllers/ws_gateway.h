@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils/ws_protocol.h"
+
 #include <drogon/WebSocketController.h>
 #include <drogon/WebSocketConnection.h>
 #include <json/json.h>
@@ -74,6 +76,22 @@ public:
         return false;
     }
 
+    // 挤下线：推送 kicked 通知并关闭该用户当前连接（新登录时调用）
+    void kick(int64_t userId, const std::string& reason)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = connections_.find(userId);
+        if (it != connections_.end() && it->second->connected())
+        {
+            Json::Value data;
+            data["message"] = reason;
+            it->second->send(ws::makeEnvelope(ws::KICKED, 0, data));
+            it->second->shutdown(drogon::CloseCode::kNormalClosure,
+                                 "kicked by new login");
+            connections_.erase(it);
+        }
+    }
+
     // 检查用户是否在线
     bool isOnline(int64_t userId)
     {
@@ -96,7 +114,7 @@ private:
 };
 
 // WebSocket 网关控制器
-class WsGateway : public drogon::WebSocketController<WsGateway, false>
+class WsGateway : public drogon::WebSocketController<WsGateway>
 {
 public:
     WS_PATH_LIST_BEGIN

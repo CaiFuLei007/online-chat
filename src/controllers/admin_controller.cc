@@ -1,4 +1,5 @@
 #include "controllers/admin_controller.h"
+#include "utils/sql_util.h"
 #include "services/group_service.h"
 #include "dao/db_client.h"
 #include "utils/response.h"
@@ -34,19 +35,27 @@ void AdminController::listGroups(
     int offset = (page - 1) * pageSize;
     auto db = DbClient::get();
 
-    // 查总数
     db->execSqlAsync(
-        [db, offset, pageSize, page, onSuccess =
-            [callback](const Json::Value& data) { callback(Response::ok(data)); },
-            onError = [callback](ErrorCode code, const std::string& msg)
-            { callback(Response::fail(code, msg)); }
-        ](const drogon::orm::Result& countResult)
+        SQL("SELECT COUNT(*) FROM group_chats"),
+        [db,
+        offset,
+        pageSize,
+        page,
+        callback]
+        (const drogon::orm::Result& countResult)
         {
             int total = countResult[0][0].as<int>();
 
-            // 查列表（含群主昵称）
             db->execSqlAsync(
-                [total, page, onSuccess](const drogon::orm::Result& result)
+                SQL("SELECT gc.id, gc.name, gc.owner_id, u.nickname AS owner_name, "
+                "gc.member_count, gc.created_at "
+                "FROM group_chats gc LEFT JOIN users u ON gc.owner_id = u.id "
+                "ORDER BY gc.id DESC LIMIT ? OFFSET ?"),
+                [total,
+                page,
+                pageSize,
+                callback]
+                (const drogon::orm::Result& result)
                 {
                     Json::Value list(Json::arrayValue);
                     for (const auto& row : result)
@@ -65,25 +74,21 @@ void AdminController::listGroups(
                     data["total"]    = total;
                     data["page"]     = page;
                     data["pageSize"] = pageSize;
-                    onSuccess(data);
+                    callback(Response::ok(data));
                 },
-                [onError](const drogon::orm::DrogonDbException& e)
+                [callback](const drogon::orm::DrogonDbException& e)
                 {
                     LOG_ERROR << "DB error in admin listGroups: " << e.base().what();
-                    onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
+                    callback(Response::fail(ErrorCode::INTERNAL_ERROR, "数据库错误"));
                 },
-                "SELECT gc.id, gc.name, gc.owner_id, u.nickname AS owner_name, "
-                "gc.member_count, gc.created_at "
-                "FROM group_chats gc LEFT JOIN users u ON gc.owner_id = u.id "
-                "ORDER BY gc.id DESC LIMIT ? OFFSET ?",
-                pageSize, offset);
+                pageSize,
+                offset);
         },
         [callback](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB error in admin listGroups count: " << e.base().what();
             callback(Response::fail(ErrorCode::INTERNAL_ERROR, "数据库错误"));
-        },
-        "SELECT COUNT(*) FROM group_chats");
+        });
 }
 
 // DELETE /api/admin/groups/{id}
@@ -98,12 +103,11 @@ void AdminController::dissolve(
         return;
     }
 
-    // 复用 GroupService 的注销逻辑（传 userId=0 表示超管操作，跳过群主校验）
-    // 但 GroupService::dissolveGroup 会校验 ownerId == currentUserId
-    // 所以这里直接调用 DB 硬删，与 GroupService 逻辑一致
     auto db = DbClient::get();
     db->execSqlAsync(
-        [groupId, callback](const drogon::orm::Result& result)
+        SQL("SELECT id FROM group_chats WHERE id=?"),
+        [groupId,
+        callback](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -114,14 +118,19 @@ void AdminController::dissolve(
             // 硬删：messages → members → group
             auto db2 = DbClient::get();
             db2->execSqlAsync(
-                [groupId, callback](const drogon::orm::Result&)
+                SQL("DELETE FROM group_messages WHERE group_id=?"),
+                [groupId,
+                callback](const drogon::orm::Result&)
                 {
                     auto db3 = DbClient::get();
                     db3->execSqlAsync(
-                        [groupId, callback](const drogon::orm::Result&)
+                        SQL("DELETE FROM group_members WHERE group_id=?"),
+                        [groupId,
+                        callback](const drogon::orm::Result&)
                         {
                             auto db4 = DbClient::get();
                             db4->execSqlAsync(
+                                SQL("DELETE FROM group_chats WHERE id=?"),
                                 [callback](const drogon::orm::Result&)
                                 {
                                     Json::Value data;
@@ -133,7 +142,6 @@ void AdminController::dissolve(
                                     LOG_ERROR << "DB error: " << e.base().what();
                                     callback(Response::fail(ErrorCode::INTERNAL_ERROR, "数据库错误"));
                                 },
-                                "DELETE FROM group_chats WHERE id=?",
                                 groupId);
                         },
                         [callback](const drogon::orm::DrogonDbException& e)
@@ -141,7 +149,6 @@ void AdminController::dissolve(
                             LOG_ERROR << "DB error: " << e.base().what();
                             callback(Response::fail(ErrorCode::INTERNAL_ERROR, "数据库错误"));
                         },
-                        "DELETE FROM group_members WHERE group_id=?",
                         groupId);
                 },
                 [callback](const drogon::orm::DrogonDbException& e)
@@ -149,7 +156,6 @@ void AdminController::dissolve(
                     LOG_ERROR << "DB error: " << e.base().what();
                     callback(Response::fail(ErrorCode::INTERNAL_ERROR, "数据库错误"));
                 },
-                "DELETE FROM group_messages WHERE group_id=?",
                 groupId);
         },
         [callback](const drogon::orm::DrogonDbException& e)
@@ -157,7 +163,6 @@ void AdminController::dissolve(
             LOG_ERROR << "DB error: " << e.base().what();
             callback(Response::fail(ErrorCode::INTERNAL_ERROR, "数据库错误"));
         },
-        "SELECT id FROM group_chats WHERE id=?",
         groupId);
 }
 

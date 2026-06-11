@@ -1,6 +1,10 @@
 #pragma once
 
 #include <drogon/HttpController.h>
+using drogon::Get;
+using drogon::Post;
+using drogon::Delete;
+using drogon::Put;
 
 // 消息控制器
 //
@@ -13,9 +17,9 @@ class MessageController : public drogon::HttpController<MessageController>
 {
 public:
     METHOD_LIST_BEGIN
-    ADD_METHOD_TO(MessageController::singleHistory, "/api/message/single/history", Get, "JwtFilter");
-    ADD_METHOD_TO(MessageController::groupHistory,  "/api/message/group/history",  Get, "JwtFilter");
-    ADD_METHOD_TO(MessageController::pullOffline,   "/api/message/offline",        Get, "JwtFilter");
+    ADD_METHOD_TO(MessageController::singleHistory, "/api/message/single/history", Get, "online_chat::JwtFilter");
+    ADD_METHOD_TO(MessageController::groupHistory,  "/api/message/group/history",  Get, "online_chat::JwtFilter");
+    ADD_METHOD_TO(MessageController::pullOffline,   "/api/message/offline",        Get, "online_chat::JwtFilter");
     METHOD_LIST_END
 
     void singleHistory(const drogon::HttpRequestPtr& req,

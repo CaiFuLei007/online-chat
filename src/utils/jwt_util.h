@@ -29,8 +29,8 @@ public:
     static std::string sign(const JwtPayload& payload)
     {
         const std::string secret  = getSecret();
-        const int expireSeconds   = ConfigDrogon::getInt("JWT_SECRET", "jwt.expire_seconds", 604800);
-        const std::string issuer  = ConfigDrogon::get("JWT_SECRET", "jwt.issuer", "online-chat");
+        const int expireSeconds   = ConfigDrogon::getInt("JWT_EXPIRE_SECONDS", "jwt.expire_seconds", 604800);
+        const std::string issuer  = ConfigDrogon::get("JWT_ISSUER", "jwt.issuer", "online-chat");
 
         auto now = std::chrono::system_clock::now();
         auto exp = now + std::chrono::seconds(expireSeconds);
@@ -61,7 +61,7 @@ public:
 
             auto verifier = jwt::verify()
                 .allow_algorithm(jwt::algorithm::hs256{secret})
-                .with_issuer(ConfigDrogon::get("JWT_SECRET", "jwt.issuer", "online-chat"));
+                .with_issuer(ConfigDrogon::get("JWT_ISSUER", "jwt.issuer", "online-chat"));
 
             verifier.verify(decoded);
 

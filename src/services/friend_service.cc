@@ -1,4 +1,5 @@
 #include "services/friend_service.h"
+#include "utils/sql_util.h"
 #include "dao/db_client.h"
 #include "dao/redis_client.h"
 #include "utils/errors.h"
@@ -20,7 +21,9 @@ void FriendService::findFriendship(
     if (userA > userB) std::swap(userA, userB);
     auto db = DbClient::get();
     db->execSqlAsync(
-        [onFound, onNotFound](const drogon::orm::Result& result)
+        SQL("SELECT id, status FROM friendships WHERE user_a=? AND user_b=?"),
+        [onFound,
+        onNotFound](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -35,8 +38,8 @@ void FriendService::findFriendship(
             LOG_ERROR << "DB error in findFriendship: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT id, status FROM friendships WHERE user_a=? AND user_b=?",
-        userA, userB);
+        userA,
+        userB);
 }
 
 // ---- 发送加好友申请 ----
@@ -52,21 +55,19 @@ void FriendService::sendRequest(
         return;
     }
 
-    // 检查是否已是好友
-    findFriendship(fromUser, toUser,
-        [onError](int64_t /*id*/, int status)
-        {
-            if (status == 1)
-                onError(ErrorCode::ALREADY_FRIENDS, "已是好友");
-            else
-                onError(ErrorCode::ALREADY_FRIENDS, "好友关系已存在（已解除）");
-        },
+    // 检查是否已是好友；status=0（已解除）允许重新发起申请
+    auto proceed =
         [fromUser, toUser, message, onSuccess, onError]()
         {
             // 不是好友，检查是否有待处理申请
             auto db = DbClient::get();
             db->execSqlAsync(
-                [fromUser, toUser, message, onSuccess, onError]
+                SQL("SELECT id FROM friend_requests WHERE from_user=? AND to_user=? AND status=0"),
+                [fromUser,
+                toUser,
+                message,
+                onSuccess,
+                onError]
                 (const drogon::orm::Result& result)
                 {
                     if (!result.empty())
@@ -78,6 +79,7 @@ void FriendService::sendRequest(
                     // 插入申请
                     auto db2 = DbClient::get();
                     db2->execSqlAsync(
+                        SQL("INSERT INTO friend_requests (from_user, to_user, message) VALUES (?, ?, ?)"),
                         [onSuccess](const drogon::orm::Result& r)
                         {
                             Json::Value data;
@@ -90,17 +92,28 @@ void FriendService::sendRequest(
                             LOG_ERROR << "DB INSERT friend_request error: " << e.base().what();
                             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                         },
-                        "INSERT INTO friend_requests (from_user, to_user, message) VALUES (?, ?, ?)",
-                        fromUser, toUser, message);
+                        fromUser,
+                        toUser,
+                        message);
                 },
                 [onError](const drogon::orm::DrogonDbException& e)
                 {
                     LOG_ERROR << "DB error checking request: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "SELECT id FROM friend_requests WHERE from_user=? AND to_user=? AND status=0",
-                fromUser, toUser);
+                fromUser,
+                toUser);
+        };
+
+    findFriendship(fromUser, toUser,
+        [onError, proceed](int64_t /*id*/, int status)
+        {
+            if (status == 1)
+                onError(ErrorCode::ALREADY_FRIENDS, "已是好友");
+            else
+                proceed();
         },
+        proceed,
         onError);
 }
 
@@ -112,6 +125,9 @@ void FriendService::listPendingRequests(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
+        SQL("SELECT fr.id, fr.from_user, fr.message, fr.created_at, u.nickname "
+        "FROM friend_requests fr LEFT JOIN users u ON fr.from_user = u.id "
+        "WHERE fr.to_user=? AND fr.status=0 ORDER BY fr.created_at DESC"),
         [onSuccess](const drogon::orm::Result& result)
         {
             Json::Value list(Json::arrayValue);
@@ -139,9 +155,6 @@ void FriendService::listPendingRequests(
             LOG_ERROR << "DB error in listPendingRequests: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT fr.id, fr.from_user, fr.message, fr.created_at, u.nickname "
-        "FROM friend_requests fr LEFT JOIN users u ON fr.from_user = u.id "
-        "WHERE fr.to_user=? AND fr.status=0 ORDER BY fr.created_at DESC",
         userId);
 }
 
@@ -154,7 +167,12 @@ void FriendService::handleRequest(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        [requestId, currentUserId, accept, onSuccess, onError]
+        SQL("SELECT from_user, to_user, status FROM friend_requests WHERE id=?"),
+        [requestId,
+        currentUserId,
+        accept,
+        onSuccess,
+        onError]
         (const drogon::orm::Result& result)
         {
             if (result.empty())
@@ -183,6 +201,7 @@ void FriendService::handleRequest(
                 // 拒绝：更新状态
                 auto db2 = DbClient::get();
                 db2->execSqlAsync(
+                    SQL("UPDATE friend_requests SET status=2 WHERE id=?"),
                     [onSuccess](const drogon::orm::Result&)
                     {
                         Json::Value data;
@@ -194,7 +213,6 @@ void FriendService::handleRequest(
                         LOG_ERROR << "DB error rejecting request: " << e.base().what();
                         onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                     },
-                    "UPDATE friend_requests SET status=2 WHERE id=?",
                     requestId);
                 return;
             }
@@ -206,7 +224,12 @@ void FriendService::handleRequest(
             auto db2 = DbClient::get();
             // 先检查是否已有 friendships 记录（可能以前删过好友）
             db2->execSqlAsync(
-                [requestId, userA, userB, onSuccess, onError]
+                SQL("SELECT id FROM friendships WHERE user_a=? AND user_b=?"),
+                [requestId,
+                userA,
+                userB,
+                onSuccess,
+                onError]
                 (const drogon::orm::Result& existResult)
                 {
                     auto db3 = DbClient::get();
@@ -214,50 +237,67 @@ void FriendService::handleRequest(
                     {
                         // 新建好友关系
                         db3->execSqlAsync(
-                            [requestId, onSuccess](const drogon::orm::Result&)
+                            SQL("INSERT INTO friendships (user_a, user_b, status) VALUES (?, ?, 1)"),
+                            [requestId,
+                            onSuccess](const drogon::orm::Result&)
                             {
-                                // 更新申请状态
+                                // 更新申请状态，完成后再响应，避免重复处理的竞态
                                 auto db4 = DbClient::get();
                                 db4->execSqlAsync(
-                                    [](const drogon::orm::Result&) {},
-                                    [](const drogon::orm::DrogonDbException&) {},
-                                    "UPDATE friend_requests SET status=1 WHERE id=?",
+                                    SQL("UPDATE friend_requests SET status=1 WHERE id=?"),
+                                    [onSuccess](const drogon::orm::Result&)
+                                    {
+                                        Json::Value data;
+                                        data["message"] = "已同意";
+                                        onSuccess(data);
+                                    },
+                                    [onSuccess](const drogon::orm::DrogonDbException&)
+                                    {
+                                        Json::Value data;
+                                        data["message"] = "已同意";
+                                        onSuccess(data);
+                                    },
                                     requestId);
-                                Json::Value data;
-                                data["message"] = "已同意";
-                                onSuccess(data);
                             },
                             [onError](const drogon::orm::DrogonDbException& e)
                             {
                                 LOG_ERROR << "DB INSERT friendship error: " << e.base().what();
                                 onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                             },
-                            "INSERT INTO friendships (user_a, user_b, status) VALUES (?, ?, 1)",
-                            userA, userB);
+                            userA,
+                            userB);
                     }
                     else
                     {
                         // 已有记录（之前删过），恢复 status=1
                         int64_t fid = existResult[0]["id"].as<int64_t>();
                         db3->execSqlAsync(
-                            [requestId, onSuccess](const drogon::orm::Result&)
+                            SQL("UPDATE friendships SET status=1, updated_at=NOW() WHERE id=?"),
+                            [requestId,
+                            onSuccess](const drogon::orm::Result&)
                             {
                                 auto db4 = DbClient::get();
                                 db4->execSqlAsync(
-                                    [](const drogon::orm::Result&) {},
-                                    [](const drogon::orm::DrogonDbException&) {},
-                                    "UPDATE friend_requests SET status=1 WHERE id=?",
+                                    SQL("UPDATE friend_requests SET status=1 WHERE id=?"),
+                                    [onSuccess](const drogon::orm::Result&)
+                                    {
+                                        Json::Value data;
+                                        data["message"] = "已同意";
+                                        onSuccess(data);
+                                    },
+                                    [onSuccess](const drogon::orm::DrogonDbException&)
+                                    {
+                                        Json::Value data;
+                                        data["message"] = "已同意";
+                                        onSuccess(data);
+                                    },
                                     requestId);
-                                Json::Value data;
-                                data["message"] = "已同意";
-                                onSuccess(data);
                             },
                             [onError](const drogon::orm::DrogonDbException& e)
                             {
                                 LOG_ERROR << "DB UPDATE friendship error: " << e.base().what();
                                 onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                             },
-                            "UPDATE friendships SET status=1, updated_at=NOW() WHERE id=?",
                             fid);
                     }
                 },
@@ -266,15 +306,14 @@ void FriendService::handleRequest(
                     LOG_ERROR << "DB error checking friendship: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "SELECT id FROM friendships WHERE user_a=? AND user_b=?",
-                userA, userB);
+                userA,
+                userB);
         },
         [onError](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB error in handleRequest: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT from_user, to_user, status FROM friend_requests WHERE id=?",
         requestId);
 }
 
@@ -286,7 +325,15 @@ void FriendService::listFriends(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        [userId, onSuccess, onError](const drogon::orm::Result& result)
+        SQL("SELECT f.user_a, f.user_b, "
+        "CASE WHEN f.user_a = ? THEN f.user_b ELSE f.user_a END AS friend_id, "
+        "u.nickname, u.role "
+        "FROM friendships f "
+        "JOIN users u ON u.id = CASE WHEN f.user_a = ? THEN f.user_b ELSE f.user_a END "
+        "WHERE (f.user_a = ? OR f.user_b = ?) AND f.status = 1"),
+        [userId,
+        onSuccess,
+        onError](const drogon::orm::Result& result)
         {
             Json::Value list(Json::arrayValue);
             for (const auto& row : result)
@@ -325,7 +372,7 @@ void FriendService::listFriends(
                     [listPtr, i, count, total, onSuccess]
                     (const drogon::nosql::RedisResult& r)
                     {
-                        if (r.type() == drogon::nosql::RedisResultType::kRedisString)
+                        if (r.type() == drogon::nosql::RedisResultType::kString)
                             (*listPtr)[i]["online"] = true;
                         (*count)++;
                         if (*count == total)
@@ -354,13 +401,10 @@ void FriendService::listFriends(
             LOG_ERROR << "DB error in listFriends: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT f.user_a, f.user_b, "
-        "CASE WHEN f.user_a = ? THEN f.user_b ELSE f.user_a END AS friend_id, "
-        "u.nickname, u.role "
-        "FROM friendships f "
-        "JOIN users u ON u.id = CASE WHEN f.user_a = ? THEN f.user_b ELSE f.user_a END "
-        "WHERE (f.user_a = ? OR f.user_b = ?) AND f.status = 1",
-        userId, userId, userId, userId);
+        userId,
+        userId,
+        userId,
+        userId);
 }
 
 // ---- 删除好友（双向解除，保留消息） ----
@@ -386,6 +430,7 @@ void FriendService::removeFriend(
             // 软删除：status 设为 0
             auto db = DbClient::get();
             db->execSqlAsync(
+                SQL("UPDATE friendships SET status=0, updated_at=NOW() WHERE id=?"),
                 [onSuccess](const drogon::orm::Result&)
                 {
                     Json::Value data;
@@ -397,7 +442,6 @@ void FriendService::removeFriend(
                     LOG_ERROR << "DB error in removeFriend: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "UPDATE friendships SET status=0, updated_at=NOW() WHERE id=?",
                 id);
         },
         [onError]()

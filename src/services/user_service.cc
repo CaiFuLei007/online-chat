@@ -1,4 +1,5 @@
 #include "services/user_service.h"
+#include "utils/sql_util.h"
 #include "dao/db_client.h"
 #include "utils/errors.h"
 
@@ -14,7 +15,9 @@ void UserService::getProfile(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        [onSuccess, onError](const drogon::orm::Result& result)
+        SQL("SELECT id, email, nickname, role, created_at FROM users WHERE id=?"),
+        [onSuccess,
+        onError](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -38,7 +41,6 @@ void UserService::getProfile(
             LOG_ERROR << "DB error in getProfile: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT id, email, nickname, role, created_at FROM users WHERE id=?",
         userId);
 }
 
@@ -61,14 +63,28 @@ void UserService::searchByNickname(
 
     // 先查总数
     db->execSqlAsync(
-        [db, keyword, offset, pageSize, currentUserId, onSuccess, onError]
+        SQL("SELECT COUNT(*) FROM users WHERE nickname LIKE ? AND id != ?"),
+        [db,
+        keyword,
+        offset,
+        pageSize,
+        page,
+        currentUserId,
+        onSuccess,
+        onError]
         (const drogon::orm::Result& countResult)
         {
             int total = countResult[0][0].as<int>();
 
             // 再查列表（排除自己）
             db->execSqlAsync(
-                [total, page, pageSize, onSuccess]
+                SQL("SELECT id, nickname, role FROM users "
+                "WHERE nickname LIKE ? AND id != ? "
+                "ORDER BY id LIMIT ? OFFSET ?"),
+                [total,
+                page,
+                pageSize,
+                onSuccess]
                 (const drogon::orm::Result& result)
                 {
                     Json::Value list(Json::arrayValue);
@@ -93,18 +109,18 @@ void UserService::searchByNickname(
                     LOG_ERROR << "DB error in search: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "SELECT id, nickname, role FROM users "
-                "WHERE nickname LIKE ? AND id != ? "
-                "ORDER BY id LIMIT ? OFFSET ?",
-                "%" + keyword + "%", currentUserId, pageSize, offset);
+                "%" + keyword + "%",
+                currentUserId,
+                pageSize,
+                offset);
         },
         [onError](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB error in search count: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT COUNT(*) FROM users WHERE nickname LIKE ? AND id != ?",
-        "%" + keyword + "%", currentUserId);
+        "%" + keyword + "%",
+        currentUserId);
 }
 
 // 获取用户简要信息
@@ -115,7 +131,10 @@ void UserService::getUserBrief(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        [onFound, onError, userId](const drogon::orm::Result& result)
+        SQL("SELECT id, email, nickname, role FROM users WHERE id=?"),
+        [onFound,
+        onError,
+        userId](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -135,7 +154,6 @@ void UserService::getUserBrief(
             LOG_ERROR << "DB error in getUserBrief: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT id, email, nickname, role FROM users WHERE id=?",
         userId);
 }
 

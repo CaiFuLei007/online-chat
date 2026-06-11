@@ -1,6 +1,8 @@
 #pragma once
 
 #include <drogon/HttpController.h>
+using drogon::Get;
+using drogon::Delete;
 
 // 超管管理控制器
 //
@@ -12,8 +14,8 @@ class AdminController : public drogon::HttpController<AdminController>
 {
 public:
     METHOD_LIST_BEGIN
-    ADD_METHOD_TO(AdminController::listGroups,  "/api/admin/groups",    Get,    "JwtFilter");
-    ADD_METHOD_TO(AdminController::dissolve,    "/api/admin/groups/{1}",Delete, "JwtFilter");
+    ADD_METHOD_TO(AdminController::listGroups,  "/api/admin/groups",    Get,    "online_chat::JwtFilter");
+    ADD_METHOD_TO(AdminController::dissolve,    "/api/admin/groups/{1}",Delete, "online_chat::JwtFilter");
     METHOD_LIST_END
 
     void listGroups(const drogon::HttpRequestPtr& req,

@@ -5,6 +5,11 @@
 #include <drogon/drogon.h>
 #include <json/json.h>
 
+using drogon::k400BadRequest;
+using drogon::k401Unauthorized;
+using drogon::k403Forbidden;
+using drogon::k429TooManyRequests;
+
 namespace online_chat {
 
 // POST /api/auth/send-code

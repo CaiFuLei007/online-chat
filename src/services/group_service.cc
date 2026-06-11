@@ -1,4 +1,5 @@
 #include "services/group_service.h"
+#include "utils/sql_util.h"
 #include "dao/db_client.h"
 #include "utils/errors.h"
 
@@ -20,14 +21,19 @@ void GroupService::createGroup(
 
     auto db = DbClient::get();
     db->execSqlAsync(
-        [ownerId, onSuccess, onError](const drogon::orm::Result& result)
+        SQL("INSERT INTO group_chats (name, owner_id, member_count) VALUES (?, ?, 1)"),
+        [ownerId,
+        onSuccess,
+        onError](const drogon::orm::Result& result)
         {
             int64_t groupId = result.insertId();
 
             // 自动把创建者加为群主
             auto db2 = DbClient::get();
             db2->execSqlAsync(
-                [groupId, onSuccess](const drogon::orm::Result&)
+                SQL("INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 1)"),
+                [groupId,
+                onSuccess](const drogon::orm::Result&)
                 {
                     Json::Value data;
                     data["groupId"] = Json::Int64(groupId);
@@ -39,16 +45,16 @@ void GroupService::createGroup(
                     LOG_ERROR << "DB INSERT group_member error: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 1)",
-                groupId, ownerId);
+                groupId,
+                ownerId);
         },
         [onError](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB INSERT group error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "INSERT INTO group_chats (name, owner_id, member_count) VALUES (?, ?, 1)",
-        name, ownerId);
+        name,
+        ownerId);
 }
 
 // ---- 按群名搜索 ----
@@ -67,12 +73,23 @@ void GroupService::searchByName(
     int offset = (page - 1) * pageSize;
     auto db = DbClient::get();
     db->execSqlAsync(
-        [db, keyword, offset, pageSize, page, onSuccess, onError]
+        SQL("SELECT COUNT(*) FROM group_chats WHERE name LIKE ?"),
+        [db,
+        keyword,
+        offset,
+        pageSize,
+        page,
+        onSuccess,
+        onError]
         (const drogon::orm::Result& countResult)
         {
             int total = countResult[0][0].as<int>();
             db->execSqlAsync(
-                [total, page, onSuccess](const drogon::orm::Result& result)
+                SQL("SELECT id, name, owner_id, member_count FROM group_chats "
+                "WHERE name LIKE ? ORDER BY id LIMIT ? OFFSET ?"),
+                [total,
+                page,
+                onSuccess](const drogon::orm::Result& result)
                 {
                     Json::Value list(Json::arrayValue);
                     for (const auto& row : result)
@@ -95,16 +112,15 @@ void GroupService::searchByName(
                     LOG_ERROR << "DB error in group search: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "SELECT id, name, owner_id, member_count FROM group_chats "
-                "WHERE name LIKE ? ORDER BY id LIMIT ? OFFSET ?",
-                "%" + keyword + "%", pageSize, offset);
+                "%" + keyword + "%",
+                pageSize,
+                offset);
         },
         [onError](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB error in group search count: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT COUNT(*) FROM group_chats WHERE name LIKE ?",
         "%" + keyword + "%");
 }
 
@@ -117,7 +133,11 @@ void GroupService::sendRequest(
     // 检查群是否存在
     auto db = DbClient::get();
     db->execSqlAsync(
-        [groupId, fromUser, onSuccess, onError](const drogon::orm::Result& result)
+        SQL("SELECT id FROM group_chats WHERE id=?"),
+        [groupId,
+        fromUser,
+        onSuccess,
+        onError](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -128,7 +148,11 @@ void GroupService::sendRequest(
             // 检查是否已在群中
             auto db2 = DbClient::get();
             db2->execSqlAsync(
-                [groupId, fromUser, onSuccess, onError]
+                SQL("SELECT id FROM group_members WHERE group_id=? AND user_id=?"),
+                [groupId,
+                fromUser,
+                onSuccess,
+                onError]
                 (const drogon::orm::Result& memberResult)
                 {
                     if (!memberResult.empty())
@@ -140,7 +164,11 @@ void GroupService::sendRequest(
                     // 检查是否有待处理申请
                     auto db3 = DbClient::get();
                     db3->execSqlAsync(
-                        [groupId, fromUser, onSuccess, onError]
+                        SQL("SELECT id FROM group_requests WHERE group_id=? AND from_user=? AND status=0"),
+                        [groupId,
+                        fromUser,
+                        onSuccess,
+                        onError]
                         (const drogon::orm::Result& reqResult)
                         {
                             if (!reqResult.empty())
@@ -152,6 +180,7 @@ void GroupService::sendRequest(
                             // 插入申请
                             auto db4 = DbClient::get();
                             db4->execSqlAsync(
+                                SQL("INSERT INTO group_requests (group_id, from_user) VALUES (?, ?)"),
                                 [onSuccess](const drogon::orm::Result& r)
                                 {
                                     Json::Value data;
@@ -164,31 +193,30 @@ void GroupService::sendRequest(
                                     LOG_ERROR << "DB INSERT group_request error: " << e.base().what();
                                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                                 },
-                                "INSERT INTO group_requests (group_id, from_user) VALUES (?, ?)",
-                                groupId, fromUser);
+                                groupId,
+                                fromUser);
                         },
                         [onError](const drogon::orm::DrogonDbException& e)
                         {
                             LOG_ERROR << "DB error: " << e.base().what();
                             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                         },
-                        "SELECT id FROM group_requests WHERE group_id=? AND from_user=? AND status=0",
-                        groupId, fromUser);
+                        groupId,
+                        fromUser);
                 },
                 [onError](const drogon::orm::DrogonDbException& e)
                 {
                     LOG_ERROR << "DB error: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "SELECT id FROM group_members WHERE group_id=? AND user_id=?",
-                groupId, fromUser);
+                groupId,
+                fromUser);
         },
         [onError](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT id FROM group_chats WHERE id=?",
         groupId);
 }
 
@@ -201,7 +229,11 @@ void GroupService::listPendingRequests(
     // 验证当前用户是群主
     auto db = DbClient::get();
     db->execSqlAsync(
-        [groupId, currentUserId, onSuccess, onError](const drogon::orm::Result& result)
+        SQL("SELECT owner_id FROM group_chats WHERE id=?"),
+        [groupId,
+        currentUserId,
+        onSuccess,
+        onError](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -216,6 +248,9 @@ void GroupService::listPendingRequests(
 
             auto db2 = DbClient::get();
             db2->execSqlAsync(
+                SQL("SELECT gr.id, gr.from_user, u.nickname, gr.created_at "
+                "FROM group_requests gr LEFT JOIN users u ON gr.from_user = u.id "
+                "WHERE gr.group_id=? AND gr.status=0 ORDER BY gr.created_at DESC"),
                 [onSuccess](const drogon::orm::Result& reqResult)
                 {
                     Json::Value list(Json::arrayValue);
@@ -237,9 +272,6 @@ void GroupService::listPendingRequests(
                     LOG_ERROR << "DB error: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "SELECT gr.id, gr.from_user, u.nickname, gr.created_at "
-                "FROM group_requests gr LEFT JOIN users u ON gr.from_user = u.id "
-                "WHERE gr.group_id=? AND gr.status=0 ORDER BY gr.created_at DESC",
                 groupId);
         },
         [onError](const drogon::orm::DrogonDbException& e)
@@ -247,7 +279,6 @@ void GroupService::listPendingRequests(
             LOG_ERROR << "DB error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT owner_id FROM group_chats WHERE id=?",
         groupId);
 }
 
@@ -260,7 +291,12 @@ void GroupService::handleRequest(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        [requestId, currentUserId, accept, onSuccess, onError]
+        SQL("SELECT group_id, from_user, status FROM group_requests WHERE id=?"),
+        [requestId,
+        currentUserId,
+        accept,
+        onSuccess,
+        onError]
         (const drogon::orm::Result& result)
         {
             if (result.empty())
@@ -281,7 +317,14 @@ void GroupService::handleRequest(
             // 验证群主权限
             auto db2 = DbClient::get();
             db2->execSqlAsync(
-                [requestId, groupId, fromUser, accept, onSuccess, onError]
+                SQL("SELECT owner_id FROM group_chats WHERE id=?"),
+                [requestId,
+                groupId,
+                fromUser,
+                currentUserId,
+                accept,
+                onSuccess,
+                onError]
                 (const drogon::orm::Result& groupResult)
                 {
                     if (groupResult.empty())
@@ -289,15 +332,17 @@ void GroupService::handleRequest(
                         onError(ErrorCode::GROUP_NOT_FOUND, "群不存在");
                         return;
                     }
-                    if (groupResult[0]["owner_id"].as<int64_t>() != 0 /* placeholder, checked below */)
+                    if (groupResult[0]["owner_id"].as<int64_t>() != currentUserId)
                     {
-                        // owner_id check done via SQL parameter
+                        onError(ErrorCode::NOT_GROUP_OWNER, "不是群主");
+                        return;
                     }
 
                     if (!accept)
                     {
                         auto db3 = DbClient::get();
                         db3->execSqlAsync(
+                            SQL("UPDATE group_requests SET status=2 WHERE id=?"),
                             [onSuccess](const drogon::orm::Result&)
                             {
                                 Json::Value data;
@@ -309,7 +354,6 @@ void GroupService::handleRequest(
                                 LOG_ERROR << "DB error: " << e.base().what();
                                 onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                             },
-                            "UPDATE group_requests SET status=2 WHERE id=?",
                             requestId);
                         return;
                     }
@@ -317,20 +361,33 @@ void GroupService::handleRequest(
                     // 同意：更新申请 + 加入成员 + member_count+1
                     auto db3 = DbClient::get();
                     db3->execSqlAsync(
-                        [requestId, groupId, fromUser, onSuccess, onError]
+                        SQL("SELECT 1"),
+                        [requestId,
+                        groupId,
+                        fromUser,
+                        onSuccess,
+                        onError]
                         (const drogon::orm::Result&)
                         {
                             auto db4 = DbClient::get();
                             db4->execSqlAsync(
-                                [requestId, groupId, onSuccess, onError]
+                                SQL("INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 0)"),
+                                [requestId,
+                                groupId,
+                                onSuccess,
+                                onError]
                                 (const drogon::orm::Result&)
                                 {
                                     auto db5 = DbClient::get();
                                     db5->execSqlAsync(
-                                        [requestId, onSuccess](const drogon::orm::Result&)
+                                        SQL("UPDATE group_chats SET member_count = member_count + 1 WHERE id=?"),
+                                        [requestId,
+                                        onSuccess,
+                                        onError](const drogon::orm::Result&)
                                         {
                                             auto db6 = DbClient::get();
                                             db6->execSqlAsync(
+                                                SQL("UPDATE group_requests SET status=1 WHERE id=?"),
                                                 [onSuccess](const drogon::orm::Result&)
                                                 {
                                                     Json::Value data;
@@ -342,7 +399,6 @@ void GroupService::handleRequest(
                                                     LOG_ERROR << "DB error: " << e.base().what();
                                                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                                                 },
-                                                "UPDATE group_requests SET status=1 WHERE id=?",
                                                 requestId);
                                         },
                                         [onError](const drogon::orm::DrogonDbException& e)
@@ -350,7 +406,6 @@ void GroupService::handleRequest(
                                             LOG_ERROR << "DB error: " << e.base().what();
                                             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                                         },
-                                        "UPDATE group_chats SET member_count = member_count + 1 WHERE id=?",
                                         groupId);
                                 },
                                 [onError](const drogon::orm::DrogonDbException& e)
@@ -358,22 +413,20 @@ void GroupService::handleRequest(
                                     LOG_ERROR << "DB error: " << e.base().what();
                                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                                 },
-                                "INSERT INTO group_members (group_id, user_id, role) VALUES (?, ?, 0)",
-                                groupId, fromUser);
+                                groupId,
+                                fromUser);
                         },
                         [onError](const drogon::orm::DrogonDbException& e)
                         {
                             LOG_ERROR << "DB error: " << e.base().what();
                             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
-                        },
-                        "SELECT 1");  // placeholder, actual work is in nested callbacks
+                        });
                 },
                 [onError](const drogon::orm::DrogonDbException& e)
                 {
                     LOG_ERROR << "DB error: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "SELECT owner_id FROM group_chats WHERE id=?",
                 groupId);
         },
         [onError](const drogon::orm::DrogonDbException& e)
@@ -381,7 +434,6 @@ void GroupService::handleRequest(
             LOG_ERROR << "DB error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT group_id, from_user, status FROM group_requests WHERE id=?",
         requestId);
 }
 
@@ -393,7 +445,11 @@ void GroupService::leaveGroup(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        [groupId, userId, onSuccess, onError](const drogon::orm::Result& result)
+        SQL("SELECT owner_id FROM group_chats WHERE id=?"),
+        [groupId,
+        userId,
+        onSuccess,
+        onError](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -410,7 +466,10 @@ void GroupService::leaveGroup(
 
             auto db2 = DbClient::get();
             db2->execSqlAsync(
-                [groupId, onSuccess, onError](const drogon::orm::Result& delResult)
+                SQL("DELETE FROM group_members WHERE group_id=? AND user_id=?"),
+                [groupId,
+                onSuccess,
+                onError](const drogon::orm::Result& delResult)
                 {
                     if (delResult.affectedRows() == 0)
                     {
@@ -419,6 +478,7 @@ void GroupService::leaveGroup(
                     }
                     auto db3 = DbClient::get();
                     db3->execSqlAsync(
+                        SQL("UPDATE group_chats SET member_count = GREATEST(member_count - 1, 0) WHERE id=?"),
                         [onSuccess](const drogon::orm::Result&)
                         {
                             Json::Value data;
@@ -430,7 +490,6 @@ void GroupService::leaveGroup(
                             LOG_ERROR << "DB error: " << e.base().what();
                             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                         },
-                        "UPDATE group_chats SET member_count = GREATEST(member_count - 1, 0) WHERE id=?",
                         groupId);
                 },
                 [onError](const drogon::orm::DrogonDbException& e)
@@ -438,15 +497,14 @@ void GroupService::leaveGroup(
                     LOG_ERROR << "DB error: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "DELETE FROM group_members WHERE group_id=? AND user_id=?",
-                groupId, userId);
+                groupId,
+                userId);
         },
         [onError](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT owner_id FROM group_chats WHERE id=?",
         groupId);
 }
 
@@ -458,6 +516,9 @@ void GroupService::listMembers(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
+        SQL("SELECT gm.user_id, u.nickname, gm.role "
+        "FROM group_members gm JOIN users u ON gm.user_id = u.id "
+        "WHERE gm.group_id=? ORDER BY gm.role DESC, gm.user_id"),
         [onSuccess](const drogon::orm::Result& result)
         {
             Json::Value list(Json::arrayValue);
@@ -479,9 +540,6 @@ void GroupService::listMembers(
             LOG_ERROR << "DB error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT gm.user_id, u.nickname, gm.role "
-        "FROM group_members gm JOIN users u ON gm.user_id = u.id "
-        "WHERE gm.group_id=? ORDER BY gm.role DESC, gm.user_id",
         groupId);
 }
 
@@ -493,7 +551,11 @@ void GroupService::dissolveGroup(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        [groupId, currentUserId, onSuccess, onError](const drogon::orm::Result& result)
+        SQL("SELECT owner_id FROM group_chats WHERE id=?"),
+        [groupId,
+        currentUserId,
+        onSuccess,
+        onError](const drogon::orm::Result& result)
         {
             if (result.empty())
             {
@@ -509,14 +571,21 @@ void GroupService::dissolveGroup(
             // 事务硬删：群消息 → 群成员 → 群
             auto db2 = DbClient::get();
             db2->execSqlAsync(
-                [groupId, onSuccess, onError](const drogon::orm::Result&)
+                SQL("DELETE FROM group_messages WHERE group_id=?"),
+                [groupId,
+                onSuccess,
+                onError](const drogon::orm::Result&)
                 {
                     auto db3 = DbClient::get();
                     db3->execSqlAsync(
-                        [groupId, onSuccess, onError](const drogon::orm::Result&)
+                        SQL("DELETE FROM group_members WHERE group_id=?"),
+                        [groupId,
+                        onSuccess,
+                        onError](const drogon::orm::Result&)
                         {
                             auto db4 = DbClient::get();
                             db4->execSqlAsync(
+                                SQL("DELETE FROM group_chats WHERE id=?"),
                                 [onSuccess](const drogon::orm::Result&)
                                 {
                                     Json::Value data;
@@ -528,7 +597,6 @@ void GroupService::dissolveGroup(
                                     LOG_ERROR << "DB error: " << e.base().what();
                                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                                 },
-                                "DELETE FROM group_chats WHERE id=?",
                                 groupId);
                         },
                         [onError](const drogon::orm::DrogonDbException& e)
@@ -536,7 +604,6 @@ void GroupService::dissolveGroup(
                             LOG_ERROR << "DB error: " << e.base().what();
                             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                         },
-                        "DELETE FROM group_members WHERE group_id=?",
                         groupId);
                 },
                 [onError](const drogon::orm::DrogonDbException& e)
@@ -544,7 +611,6 @@ void GroupService::dissolveGroup(
                     LOG_ERROR << "DB error: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                 },
-                "DELETE FROM group_messages WHERE group_id=?",
                 groupId);
         },
         [onError](const drogon::orm::DrogonDbException& e)
@@ -552,7 +618,6 @@ void GroupService::dissolveGroup(
             LOG_ERROR << "DB error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT owner_id FROM group_chats WHERE id=?",
         groupId);
 }
 
@@ -564,6 +629,9 @@ void GroupService::myGroups(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
+        SQL("SELECT gm.group_id, gc.name, gc.member_count, gm.role "
+        "FROM group_members gm JOIN group_chats gc ON gm.group_id = gc.id "
+        "WHERE gm.user_id=? ORDER BY gm.group_id"),
         [onSuccess](const drogon::orm::Result& result)
         {
             Json::Value list(Json::arrayValue);
@@ -585,9 +653,6 @@ void GroupService::myGroups(
             LOG_ERROR << "DB error: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT gm.group_id, gc.name, gc.member_count, gm.role "
-        "FROM group_members gm JOIN group_chats gc ON gm.group_id = gc.id "
-        "WHERE gm.user_id=? ORDER BY gm.group_id",
         userId);
 }
 

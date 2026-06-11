@@ -36,13 +36,13 @@ void MessageService::saveOfflineIndex(int64_t userId, int msgType, int64_t msgId
 {
     auto db = DbClient::get();
     db->execSqlAsync(
+        std::string("INSERT INTO offline_messages (user_id, msg_type, msg_id) VALUES (?, ?, ?)"),
         [](const drogon::orm::Result&) {},
         [userId](const drogon::orm::DrogonDbException& e)
         {
             LOG_ERROR << "DB error saving offline index for userId=" << userId
                       << ": " << e.base().what();
         },
-        "INSERT INTO offline_messages (user_id, msg_type, msg_id) VALUES (?, ?, ?)",
         userId, msgType, msgId);
 }
 
@@ -69,19 +69,18 @@ void MessageService::sendSingleMessage(
     std::string ck = convKey(fromUser, toUser);
     std::string seqKey = "msgseq:single:" + ck;
 
-    // 1. 生成序号
     nextSeq(seqKey,
         [fromUser, toUser, content, ck, onAck, onError](int64_t seq)
         {
-            // 2. 落库
             auto db = DbClient::get();
             db->execSqlAsync(
+                std::string("INSERT INTO single_messages (conv_key, from_user, to_user, content, seq) "
+                "VALUES (?, ?, ?, ?, ?)"),
                 [fromUser, toUser, content, seq, onAck, onError]
                 (const drogon::orm::Result& result)
                 {
                     int64_t msgId = result.insertId();
 
-                    // 3. 构造消息 JSON
                     Json::Value msgData;
                     msgData["id"]      = Json::Int64(msgId);
                     msgData["from"]    = Json::Int64(fromUser);
@@ -89,14 +88,11 @@ void MessageService::sendSingleMessage(
                     msgData["content"] = content;
                     msgData["seq"]     = Json::Int64(seq);
 
-                    // 4. ack 给发送方
                     onAck(msgData);
 
-                    // 5. 尝试在线投递
                     bool delivered = ConnectionManager::instance().sendTo(
                         toUser, ws::makeEnvelope(ws::CHAT_SINGLE, seq, msgData));
 
-                    // 6. 离线暂存
                     if (!delivered)
                     {
                         saveOfflineIndex(toUser, 1, msgId);
@@ -107,8 +103,6 @@ void MessageService::sendSingleMessage(
                     LOG_ERROR << "DB INSERT single_message error: " << e.base().what();
                     onError(ErrorCode::INTERNAL_ERROR, "消息落库失败");
                 },
-                "INSERT INTO single_messages (conv_key, from_user, to_user, content, seq) "
-                "VALUES (?, ?, ?, ?, ?)",
                 ck, fromUser, toUser, content, seq);
         },
         onError);
@@ -129,13 +123,12 @@ void MessageService::sendGroupMessage(
         return;
     }
 
-    // 1. 验证发送者在群中 + 获取成员列表
     auto db = DbClient::get();
     db->execSqlAsync(
+        std::string("SELECT user_id FROM group_members WHERE group_id=?"),
         [fromUser, groupId, content, onAck, onError]
         (const drogon::orm::Result& memberResult)
         {
-            // 检查发送者是否在群中
             bool inGroup = false;
             for (const auto& row : memberResult)
             {
@@ -151,21 +144,20 @@ void MessageService::sendGroupMessage(
                 return;
             }
 
-            // 2. 生成序号
             std::string seqKey = "msgseq:group:" + std::to_string(groupId);
             nextSeq(seqKey,
                 [fromUser, groupId, content, memberResult, onAck, onError]
                 (int64_t seq)
                 {
-                    // 3. 落库
                     auto db2 = DbClient::get();
                     db2->execSqlAsync(
+                        std::string("INSERT INTO group_messages (group_id, from_user, content, seq) "
+                        "VALUES (?, ?, ?, ?)"),
                         [fromUser, groupId, content, seq, memberResult, onAck, onError]
                         (const drogon::orm::Result& result)
                         {
                             int64_t msgId = result.insertId();
 
-                            // 4. 构造消息 JSON
                             Json::Value msgData;
                             msgData["id"]       = Json::Int64(msgId);
                             msgData["groupId"]  = Json::Int64(groupId);
@@ -173,10 +165,8 @@ void MessageService::sendGroupMessage(
                             msgData["content"]  = content;
                             msgData["seq"]      = Json::Int64(seq);
 
-                            // 5. ack 给发送方
                             onAck(msgData);
 
-                            // 6. 广播给群内在线成员（排除发送者）
                             std::string envelope = ws::makeEnvelope(ws::CHAT_GROUP, seq, msgData);
                             for (const auto& row : memberResult)
                             {
@@ -196,8 +186,6 @@ void MessageService::sendGroupMessage(
                             LOG_ERROR << "DB INSERT group_message error: " << e.base().what();
                             onError(ErrorCode::INTERNAL_ERROR, "消息落库失败");
                         },
-                        "INSERT INTO group_messages (group_id, from_user, content, seq) "
-                        "VALUES (?, ?, ?, ?)",
                         groupId, fromUser, content, seq);
                 },
                 onError);
@@ -207,7 +195,6 @@ void MessageService::sendGroupMessage(
             LOG_ERROR << "DB error checking group membership: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT user_id FROM group_members WHERE group_id=?",
         groupId);
 }
 
@@ -221,6 +208,7 @@ void MessageService::pullOfflineMessages(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
+        std::string("SELECT id, msg_type, msg_id FROM offline_messages WHERE user_id=? ORDER BY id"),
         [userId, onSuccess, onError](const drogon::orm::Result& result)
         {
             if (result.empty())
@@ -231,7 +219,6 @@ void MessageService::pullOfflineMessages(
                 return;
             }
 
-            // 收集所有 msg_id 和类型
             struct OfflineRef { int64_t id; int64_t msgId; int msgType; };
             std::vector<OfflineRef> refs;
             for (const auto& row : result)
@@ -253,10 +240,10 @@ void MessageService::pullOfflineMessages(
                 const auto& ref = (*refPtr)[i];
                 if (ref.msgType == 1)
                 {
-                    // 单聊消息
                     auto db2 = DbClient::get();
                     db2->execSqlAsync(
-                        [messages, count, total, userId, ref, onSuccess]
+                        std::string("SELECT id, from_user, content, seq FROM single_messages WHERE id=?"),
+                        [messages, count, total, ref, onSuccess]
                         (const drogon::orm::Result& msgResult)
                         {
                             if (!msgResult.empty())
@@ -270,21 +257,23 @@ void MessageService::pullOfflineMessages(
                                 m["seq"]     = Json::Int64(r["seq"].as<int64_t>());
                                 messages->append(m);
                             }
-                            (*count)++;
-                            // 删除已投递的离线索引
+                            // 删除完成后再计数返回，避免快速重复拉取读到未删索引
+                            auto finish = [messages, count, total, onSuccess]()
+                            {
+                                (*count)++;
+                                if (*count == total)
+                                {
+                                    Json::Value data;
+                                    data["messages"] = *messages;
+                                    onSuccess(data);
+                                }
+                            };
                             auto db3 = DbClient::get();
                             db3->execSqlAsync(
-                                [](const drogon::orm::Result&) {},
-                                [](const drogon::orm::DrogonDbException&) {},
-                                "DELETE FROM offline_messages WHERE id=?",
+                                std::string("DELETE FROM offline_messages WHERE id=?"),
+                                [finish](const drogon::orm::Result&) { finish(); },
+                                [finish](const drogon::orm::DrogonDbException&) { finish(); },
                                 ref.id);
-
-                            if (*count == total)
-                            {
-                                Json::Value data;
-                                data["messages"] = *messages;
-                                onSuccess(data);
-                            }
                         },
                         [count, total, ref, onSuccess, messages]
                         (const drogon::orm::DrogonDbException&)
@@ -297,15 +286,14 @@ void MessageService::pullOfflineMessages(
                                 onSuccess(data);
                             }
                         },
-                        "SELECT id, from_user, content, seq FROM single_messages WHERE id=?",
                         ref.msgId);
                 }
                 else
                 {
-                    // 群聊消息
                     auto db2 = DbClient::get();
                     db2->execSqlAsync(
-                        [messages, count, total, userId, ref, onSuccess]
+                        std::string("SELECT id, group_id, from_user, content, seq FROM group_messages WHERE id=?"),
+                        [messages, count, total, ref, onSuccess]
                         (const drogon::orm::Result& msgResult)
                         {
                             if (!msgResult.empty())
@@ -320,20 +308,23 @@ void MessageService::pullOfflineMessages(
                                 m["seq"]     = Json::Int64(r["seq"].as<int64_t>());
                                 messages->append(m);
                             }
-                            (*count)++;
+                            // 删除完成后再计数返回，避免快速重复拉取读到未删索引
+                            auto finish = [messages, count, total, onSuccess]()
+                            {
+                                (*count)++;
+                                if (*count == total)
+                                {
+                                    Json::Value data;
+                                    data["messages"] = *messages;
+                                    onSuccess(data);
+                                }
+                            };
                             auto db3 = DbClient::get();
                             db3->execSqlAsync(
-                                [](const drogon::orm::Result&) {},
-                                [](const drogon::orm::DrogonDbException&) {},
-                                "DELETE FROM offline_messages WHERE id=?",
+                                std::string("DELETE FROM offline_messages WHERE id=?"),
+                                [finish](const drogon::orm::Result&) { finish(); },
+                                [finish](const drogon::orm::DrogonDbException&) { finish(); },
                                 ref.id);
-
-                            if (*count == total)
-                            {
-                                Json::Value data;
-                                data["messages"] = *messages;
-                                onSuccess(data);
-                            }
                         },
                         [count, total, ref, onSuccess, messages]
                         (const drogon::orm::DrogonDbException&)
@@ -346,7 +337,6 @@ void MessageService::pullOfflineMessages(
                                 onSuccess(data);
                             }
                         },
-                        "SELECT id, group_id, from_user, content, seq FROM group_messages WHERE id=?",
                         ref.msgId);
                 }
             }
@@ -356,7 +346,6 @@ void MessageService::pullOfflineMessages(
             LOG_ERROR << "DB error pulling offline messages: " << e.base().what();
             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
         },
-        "SELECT id, msg_type, msg_id FROM offline_messages WHERE user_id=? ORDER BY id",
         userId);
 }
 
@@ -373,13 +362,12 @@ void MessageService::getSingleHistory(
     std::string ck = convKey(userId, peerId);
 
     auto db = DbClient::get();
-    std::string sql;
     if (beforeSeq > 0)
     {
-        sql = "SELECT id, from_user, to_user, content, seq, created_at "
-              "FROM single_messages WHERE conv_key=? AND seq < ? "
-              "ORDER BY seq DESC LIMIT ?";
         db->execSqlAsync(
+            std::string("SELECT id, from_user, to_user, content, seq, created_at "
+            "FROM single_messages WHERE conv_key=? AND seq < ? "
+            "ORDER BY seq DESC LIMIT ?"),
             [onSuccess](const drogon::orm::Result& result)
             {
                 Json::Value list(Json::arrayValue);
@@ -396,7 +384,7 @@ void MessageService::getSingleHistory(
                 }
                 Json::Value data;
                 data["list"] = list;
-                data["hasMore"] = (result.size() == static_cast<size_t>(30));
+                data["hasMore"] = (result.size() == 30u);
                 onSuccess(data);
             },
             [onError](const drogon::orm::DrogonDbException& e)
@@ -404,14 +392,14 @@ void MessageService::getSingleHistory(
                 LOG_ERROR << "DB error: " << e.base().what();
                 onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
             },
-            sql, ck, beforeSeq, limit);
+            ck, beforeSeq, limit);
     }
     else
     {
-        sql = "SELECT id, from_user, to_user, content, seq, created_at "
-              "FROM single_messages WHERE conv_key=? "
-              "ORDER BY seq DESC LIMIT ?";
         db->execSqlAsync(
+            std::string("SELECT id, from_user, to_user, content, seq, created_at "
+            "FROM single_messages WHERE conv_key=? "
+            "ORDER BY seq DESC LIMIT ?"),
             [onSuccess, limit](const drogon::orm::Result& result)
             {
                 Json::Value list(Json::arrayValue);
@@ -436,7 +424,7 @@ void MessageService::getSingleHistory(
                 LOG_ERROR << "DB error: " << e.base().what();
                 onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
             },
-            sql, ck, limit);
+            ck, limit);
     }
 }
 
@@ -452,13 +440,12 @@ void MessageService::getGroupHistory(
     if (limit <= 0 || limit > 100) limit = 30;
 
     auto db = DbClient::get();
-    std::string sql;
     if (beforeSeq > 0)
     {
-        sql = "SELECT id, group_id, from_user, content, seq, created_at "
-              "FROM group_messages WHERE group_id=? AND seq < ? "
-              "ORDER BY seq DESC LIMIT ?";
         db->execSqlAsync(
+            std::string("SELECT id, group_id, from_user, content, seq, created_at "
+            "FROM group_messages WHERE group_id=? AND seq < ? "
+            "ORDER BY seq DESC LIMIT ?"),
             [onSuccess](const drogon::orm::Result& result)
             {
                 Json::Value list(Json::arrayValue);
@@ -475,7 +462,7 @@ void MessageService::getGroupHistory(
                 }
                 Json::Value data;
                 data["list"] = list;
-                data["hasMore"] = (result.size() == static_cast<size_t>(30));
+                data["hasMore"] = (result.size() == 30u);
                 onSuccess(data);
             },
             [onError](const drogon::orm::DrogonDbException& e)
@@ -483,14 +470,14 @@ void MessageService::getGroupHistory(
                 LOG_ERROR << "DB error: " << e.base().what();
                 onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
             },
-            sql, groupId, beforeSeq, limit);
+            groupId, beforeSeq, limit);
     }
     else
     {
-        sql = "SELECT id, group_id, from_user, content, seq, created_at "
-              "FROM group_messages WHERE group_id=? "
-              "ORDER BY seq DESC LIMIT ?";
         db->execSqlAsync(
+            std::string("SELECT id, group_id, from_user, content, seq, created_at "
+            "FROM group_messages WHERE group_id=? "
+            "ORDER BY seq DESC LIMIT ?"),
             [onSuccess, limit](const drogon::orm::Result& result)
             {
                 Json::Value list(Json::arrayValue);
@@ -515,7 +502,7 @@ void MessageService::getGroupHistory(
                 LOG_ERROR << "DB error: " << e.base().what();
                 onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
             },
-            sql, groupId, limit);
+            groupId, limit);
     }
 }
 

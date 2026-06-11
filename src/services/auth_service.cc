@@ -1,6 +1,6 @@
 #include "services/auth_service.h"
+#include "controllers/ws_gateway.h"
 #include "utils/config_drogon.h"
-#include "utils/errors.h"
 #include "utils/jwt_util.h"
 #include "utils/password_util.h"
 #include "utils/smtp_client.h"
@@ -13,7 +13,6 @@
 
 namespace online_chat {
 
-// ---- 验证码生成 ----
 std::string AuthService::generateCode(int length)
 {
     std::random_device rd;
@@ -26,7 +25,6 @@ std::string AuthService::generateCode(int length)
     return code;
 }
 
-// ---- 查找用户 ----
 void AuthService::findUserByEmail(
     const std::string& email,
     const std::function<void(const UserRow&)>& onFound,
@@ -35,8 +33,8 @@ void AuthService::findUserByEmail(
 {
     auto db = DbClient::get();
     db->execSqlAsync(
-        "SELECT id, email, password_hash, nickname, role, status "
-        "FROM users WHERE email=?",
+        std::string("SELECT id, email, password_hash, nickname, role, status "
+        "FROM users WHERE email=?"),
         [onFound, onNotFound](const drogon::orm::Result& result)
         {
             if (result.empty())
@@ -62,47 +60,40 @@ void AuthService::findUserByEmail(
         email);
 }
 
-// ---- 1. 发送验证码 ----
 void AuthService::sendVerifyCode(
     const std::string& email,
     const JsonCallback& onSuccess,
     const ErrorCallback& onError)
 {
-    const int codeLen = ConfigDrogon::getInt("JWT_SECRET", "verify_code.length", 6);
-    const int ttl     = ConfigDrogon::getInt("JWT_SECRET", "verify_code.ttl_seconds", 300);
-    const int limit   = ConfigDrogon::getInt("JWT_SECRET", "verify_code.resend_interval_seconds", 60);
+    const int codeLen = ConfigDrogon::getInt("VERIFY_CODE_LENGTH", "verify_code.length", 6);
+    const int ttl     = ConfigDrogon::getInt("VERIFY_CODE_TTL_SECONDS", "verify_code.ttl_seconds", 300);
+    const int limitSec = ConfigDrogon::getInt("VERIFY_CODE_RESEND_INTERVAL", "verify_code.resend_interval_seconds", 60);
 
     auto redis = RedisClient::get();
-
-    // 1. 检查限频
     std::string limitKey = "verifycode_limit:" + email;
+
     redis->execCommandAsync(
-        [email, codeLen, ttl, redis, onSuccess, onError, limitKey]
+        [email, codeLen, ttl, redis, onSuccess, onError, limitKey, limitSec]
         (const drogon::nosql::RedisResult& result)
         {
-            // 限频键存在 → 拒绝
-            if (result.type() == drogon::nosql::RedisResultType::kRedisString)
+            if (result.type() == drogon::nosql::RedisResultType::kString)
             {
                 onError(ErrorCode::RESEND_TOO_FAST, "请60秒后再试");
                 return;
             }
 
-            // 2. 生成验证码
             std::string code = generateCode(codeLen);
             std::string codeKey = "verifycode:" + email;
 
-            // 3. 存验证码 + 设置限频（两条命令）
             redis->execCommandAsync(
-                [email, code, onSuccess, onError, limitKey, limit]
+                [email, code, onSuccess, onError, limitKey, limitSec]
                 (const drogon::nosql::RedisResult&)
                 {
-                    // 验证码已存，再设限频
                     auto redis2 = RedisClient::get();
                     redis2->execCommandAsync(
-                        [email, code, onSuccess]
+                        [email, code, onSuccess, onError]
                         (const drogon::nosql::RedisResult&)
                         {
-                            // 4. 异步发邮件（丢到线程池）
                             drogon::app().getLoop()->queueInLoop(
                                 [email, code]()
                                 {
@@ -120,7 +111,7 @@ void AuthService::sendVerifyCode(
                             LOG_ERROR << "Redis SET limit error: " << e.what();
                             onError(ErrorCode::INTERNAL_ERROR, "redis error");
                         },
-                        "SET %s 1 EX %d", limitKey.c_str(), limit);
+                        "SET %s 1 EX %d", limitKey.c_str(), limitSec);
                 },
                 [onError](const drogon::nosql::RedisException& e)
                 {
@@ -137,7 +128,6 @@ void AuthService::sendVerifyCode(
         "GET %s", limitKey.c_str());
 }
 
-// ---- 2. 注册 ----
 void AuthService::registerUser(
     const std::string& email,
     const std::string& code,
@@ -146,7 +136,6 @@ void AuthService::registerUser(
     const JsonCallback& onSuccess,
     const ErrorCallback& onError)
 {
-    // 参数校验
     if (email.empty() || code.empty() || password.empty())
     {
         onError(ErrorCode::INVALID_PARAMS, "邮箱、验证码、密码不能为空");
@@ -161,33 +150,30 @@ void AuthService::registerUser(
     auto redis = RedisClient::get();
     std::string codeKey = "verifycode:" + email;
 
-    // 1. 从 Redis 取验证码
     redis->execCommandAsync(
         [email, code, password, nickname, onSuccess, onError, codeKey]
         (const drogon::nosql::RedisResult& result)
         {
-            if (result.type() != drogon::nosql::RedisResultType::kRedisString)
+            if (result.type() != drogon::nosql::RedisResultType::kString)
             {
                 onError(ErrorCode::VERIFY_CODE_EXPIRED, "验证码已过期或未发送");
                 return;
             }
 
-            std::string storedCode = result.getString();
+            std::string storedCode = result.asString();
             if (storedCode != code)
             {
                 onError(ErrorCode::VERIFY_CODE_WRONG, "验证码错误");
                 return;
             }
 
-            // 2. 验证码正确，查重
             findUserByEmail(email,
                 [onError](const UserRow&)
                 {
                     onError(ErrorCode::EMAIL_REGISTERED, "该邮箱已注册");
                 },
-                [email, code, password, nickname, onSuccess, onError, codeKey]()
+                [email, password, nickname, onSuccess, onError, codeKey]()
                 {
-                    // 3. 邮箱未注册，bcrypt 哈希密码
                     std::string hash = PasswordUtil::hash(password);
                     if (hash.empty())
                     {
@@ -195,15 +181,13 @@ void AuthService::registerUser(
                         return;
                     }
 
-                    // 4. INSERT 用户
                     auto db = DbClient::get();
                     db->execSqlAsync(
-                        [email, onSuccess, onError, codeKey]
-                        (const drogon::orm::Result& result)
+                        std::string("INSERT INTO users (email, password_hash, nickname, role, status) "
+                        "VALUES (?, ?, ?, 0, 0)"),
+                        [email, onSuccess, codeKey](const drogon::orm::Result& result)
                         {
                             int64_t userId = result.insertId();
-
-                            // 5. 删除已使用的验证码
                             auto redis = RedisClient::get();
                             redis->execCommandAsync(
                                 [](const drogon::nosql::RedisResult&) {},
@@ -220,8 +204,6 @@ void AuthService::registerUser(
                             LOG_ERROR << "DB INSERT user error: " << e.base().what();
                             onError(ErrorCode::INTERNAL_ERROR, "数据库错误");
                         },
-                        "INSERT INTO users (email, password_hash, nickname, role, status) "
-                        "VALUES (?, ?, ?, 0, 0)",
                         email, hash, nickname);
                 },
                 onError);
@@ -234,7 +216,6 @@ void AuthService::registerUser(
         "GET %s", codeKey.c_str());
 }
 
-// ---- 3. 登录 ----
 void AuthService::login(
     const std::string& email,
     const std::string& password,
@@ -250,21 +231,18 @@ void AuthService::login(
     findUserByEmail(email,
         [password, onSuccess, onError](const UserRow& user)
         {
-            // 检查账号状态
             if (user.status == 1)
             {
                 onError(ErrorCode::ACCOUNT_DISABLED, "账号已被禁用");
                 return;
             }
 
-            // bcrypt 校验
             if (!PasswordUtil::verify(password, user.passwordHash))
             {
                 onError(ErrorCode::PASSWORD_WRONG, "邮箱或密码错误");
                 return;
             }
 
-            // 签发 JWT
             JwtPayload payload;
             payload.userId   = user.id;
             payload.email    = user.email;
@@ -272,13 +250,15 @@ void AuthService::login(
             payload.nickname = user.nickname;
             std::string token = JwtUtil::sign(payload);
 
-            // 存 Redis session（覆盖旧的 → 单点登录挤下线）
             auto redis = RedisClient::get();
             std::string sessionKey = "session:" + std::to_string(user.id);
             redis->execCommandAsync(
                 [token, user, onSuccess]
                 (const drogon::nosql::RedisResult&)
                 {
+                    // 单点登录：旧 WS 连接推送 kicked 后关闭
+                    ConnectionManager::instance().kick(user.id, "账号在其他地方登录");
+
                     Json::Value data;
                     data["token"]    = token;
                     data["userId"]   = Json::Int64(user.id);
@@ -300,7 +280,6 @@ void AuthService::login(
         onError);
 }
 
-// ---- 4. 踢下线 ----
 void AuthService::kickUser(
     int64_t userId,
     const std::function<void()>& onDone)

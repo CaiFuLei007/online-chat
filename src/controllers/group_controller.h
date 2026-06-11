@@ -1,6 +1,10 @@
 #pragma once
 
 #include <drogon/HttpController.h>
+using drogon::Get;
+using drogon::Post;
+using drogon::Delete;
+using drogon::Put;
 
 // 群聊控制器
 //
@@ -20,16 +24,16 @@ class GroupController : public drogon::HttpController<GroupController>
 {
 public:
     METHOD_LIST_BEGIN
-    ADD_METHOD_TO(GroupController::createGroup,   "/api/group/create",        Post,   "JwtFilter");
-    ADD_METHOD_TO(GroupController::search,        "/api/group/search",        Get,    "JwtFilter");
-    ADD_METHOD_TO(GroupController::joinRequest,   "/api/group/join/{1}",      Post,   "JwtFilter");
-    ADD_METHOD_TO(GroupController::listRequests,  "/api/group/requests/{1}",  Get,    "JwtFilter");
-    ADD_METHOD_TO(GroupController::acceptRequest, "/api/group/accept/{1}",    Post,   "JwtFilter");
-    ADD_METHOD_TO(GroupController::rejectRequest, "/api/group/reject/{1}",    Post,   "JwtFilter");
-    ADD_METHOD_TO(GroupController::leaveGroup,    "/api/group/leave/{1}",     Post,   "JwtFilter");
-    ADD_METHOD_TO(GroupController::listMembers,   "/api/group/members/{1}",   Get,    "JwtFilter");
-    ADD_METHOD_TO(GroupController::dissolve,      "/api/group/{1}",           Delete, "JwtFilter");
-    ADD_METHOD_TO(GroupController::myGroups,      "/api/group/my",            Get,    "JwtFilter");
+    ADD_METHOD_TO(GroupController::createGroup,   "/api/group/create",        Post,   "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::search,        "/api/group/search",        Get,    "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::joinRequest,   "/api/group/join/{1}",      Post,   "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::listRequests,  "/api/group/requests/{1}",  Get,    "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::acceptRequest, "/api/group/accept/{1}",    Post,   "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::rejectRequest, "/api/group/reject/{1}",    Post,   "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::leaveGroup,    "/api/group/leave/{1}",     Post,   "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::listMembers,   "/api/group/members/{1}",   Get,    "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::dissolve,      "/api/group/{1}",           Delete, "online_chat::JwtFilter");
+    ADD_METHOD_TO(GroupController::myGroups,      "/api/group/my",            Get,    "online_chat::JwtFilter");
     METHOD_LIST_END
 
     void createGroup(const drogon::HttpRequestPtr& req,

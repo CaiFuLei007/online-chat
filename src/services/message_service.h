@@ -1,5 +1,6 @@
 #pragma once
 
+#include "utils/errors.h"
 #include <drogon/drogon.h>
 #include <functional>
 #include <string>

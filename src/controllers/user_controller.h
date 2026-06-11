@@ -1,6 +1,10 @@
 #pragma once
 
 #include <drogon/HttpController.h>
+using drogon::Get;
+using drogon::Post;
+using drogon::Delete;
+using drogon::Put;
 
 // 用户控制器
 //
@@ -13,9 +17,9 @@ class UserController : public drogon::HttpController<UserController>
 {
 public:
     METHOD_LIST_BEGIN
-    ADD_METHOD_TO(UserController::myProfile,       "/api/user/profile",      Get, "JwtFilter");
-    ADD_METHOD_TO(UserController::userProfile,     "/api/user/profile/{1}",  Get, "JwtFilter");
-    ADD_METHOD_TO(UserController::search,          "/api/user/search",       Get, "JwtFilter");
+    ADD_METHOD_TO(UserController::myProfile,       "/api/user/profile",      Get, "online_chat::JwtFilter");
+    ADD_METHOD_TO(UserController::userProfile,     "/api/user/profile/{1}",  Get, "online_chat::JwtFilter");
+    ADD_METHOD_TO(UserController::search,          "/api/user/search",       Get, "online_chat::JwtFilter");
     METHOD_LIST_END
 
     void myProfile(const drogon::HttpRequestPtr& req,
