@@ -20,11 +20,11 @@
         {
             "name": "default",
             "rdbms": "mysql",
-            "host": "127.0.0.1",
+            "host": "mysql",
             "port": 3306,
             "dbname": "online_chat",
             "user": "online_chat",
-            "passwd": "",          // 环境变量: MYSQL_PASSWORD
+            "passwd": "online_chat_pwd",  // 与 docker/docker-compose.yml 中 MYSQL_PASSWORD 保持一致（Drogon 不支持对此字段做 env 替换）
             "is_fast": false,
             "connection_number": 10,
             "timeout": -1.0,
@@ -37,7 +37,7 @@
     "redis_clients": [
         {
             "name": "default",
-            "host": "127.0.0.1",
+            "host": "redis",
             "port": 6379,
             "password": "",        // 环境变量: REDIS_PASSWORD（无密码留空）
             "db": 0,

@@ -5,10 +5,10 @@
 # 停止：cd docker && docker compose down
 # 清除数据（重建）：docker compose down -v
 #
-# 端口映射：
-#   3306  MySQL（宿主机可直连调试）
-#   6379  Redis
-#   8080  应用 HTTP/WS
+# 端口映射（宿主机侧错开本机已有的 MySQL/Redis 服务）：
+#   3307 -> 3306  MySQL（宿主机可直连调试）
+#   6380 -> 6379  Redis
+#   8080          应用 HTTP/WS
 # ============================================================================
 
 services:
@@ -23,7 +23,7 @@ services:
       MYSQL_USER: online_chat
       MYSQL_PASSWORD: online_chat_pwd
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ../sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -39,7 +39,7 @@ services:
     container_name: oc-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -53,6 +53,11 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        # 构建期代理（从宿主机 shell 环境继承，仅影响构建，不进入运行时镜像）
+        http_proxy: "${http_proxy:-}"
+        https_proxy: "${https_proxy:-}"
+        no_proxy: "localhost,127.0.0.1,mirrors.aliyun.com"
     container_name: oc-app
     restart: unless-stopped
     depends_on:
@@ -73,7 +78,10 @@ services:
     volumes:
       # 开发时挂载前端目录，热更新无需重建镜像
       - ../frontend:/app/frontend:ro
+      # uploads 需要可写，用独立卷覆盖只读挂载
+      - uploads_data:/app/frontend/uploads
 
 volumes:
   mysql_data:
   redis_data:
+  uploads_data:

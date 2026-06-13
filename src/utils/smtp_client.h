@@ -5,6 +5,9 @@
 #include <drogon/drogon.h>
 #include <string>
 #include <sstream>
+#include <fstream>
+#include <cstdio>
+#include <unistd.h>
 
 // SMTP 邮件发送工具
 //
@@ -34,25 +37,43 @@ public:
             return false;
         }
 
-        // 构造 curl 命令，所有参数均做壳转义
+        // 构造完整的 RFC 2822 邮件内容（头 + 空行 + 正文）
+        std::ostringstream mailData;
+        mailData << "From: " << fromName << " <" << fromAddr << ">\r\n"
+                 << "To: <" << toEmail << ">\r\n"
+                 << "Subject: " << subject << "\r\n"
+                 << "Content-Type: text/plain; charset=UTF-8\r\n"
+                 << "\r\n"
+                 << body;
+
+        // 写入临时文件
+        const std::string tmpFile = "/tmp/smtp_mail_" + std::to_string(getpid()) + ".eml";
+        {
+            std::ofstream ofs(tmpFile, std::ios::binary);
+            if (!ofs)
+            {
+                LOG_ERROR << "Failed to create temp file: " << tmpFile;
+                return false;
+            }
+            ofs << mailData.str();
+        }
+
+        // 构造 curl 命令
         std::ostringstream cmd;
         cmd << "curl -sS --max-time 30"
             << " --url "       << shellQuote((useSsl ? "smtps://" : "smtp://") + host + ":" + port)
             << " --mail-from " << shellQuote(fromAddr)
             << " --mail-rcpt " << shellQuote(toEmail)
             << " --user "      << shellQuote(username + ":" + password)
-            << " -H "          << shellQuote("From: " + fromName + " <" + fromAddr + ">")
-            << " -H "          << shellQuote("To: <" + toEmail + ">")
-            << " -H "          << shellQuote("Subject: " + subject)
-            << " -H "          << shellQuote("Content-Type: text/plain; charset=UTF-8")
-            << " --upload-file -"
+            << " --upload-file " << shellQuote(tmpFile)
             << " 2>&1";
 
-        // 正文通过 stdin 传入，同样壳转义
-        const std::string fullCmd = "echo " + shellQuote(body) + " | " + cmd.str();
-
         LOG_DEBUG << "SMTP sending to " << toEmail;
-        int ret = std::system(fullCmd.c_str());
+        int ret = std::system(cmd.str().c_str());
+
+        // 清理临时文件
+        std::remove(tmpFile.c_str());
+
         if (ret != 0)
         {
             LOG_ERROR << "SMTP send failed to " << toEmail << ", curl exit code: " << ret;
