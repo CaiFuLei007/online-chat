@@ -19,6 +19,9 @@ online_chat
 .env
 *.env
 
+# 本地开发覆盖配置（由 config.local.json.example 复制而来）
+config/config.local.json
+
 # Docker 数据卷
 docker/mysql_data/
 docker/redis_data/

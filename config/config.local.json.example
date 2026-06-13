@@ -1,0 +1,40 @@
+/* online-chat 本地开发配置模板（非 Docker 环境）
+ *
+ * 使用方法：
+ *   cp config/config.local.json.example config/config.local.json
+ *   然后按需修改（主要是 host 改为 127.0.0.1）
+ *
+ * 说明：
+ *   - config.local.json 已被 .gitignore 排除，不会提交到版本库
+ *   - 程序启动时会优先加载 config.local.json（如果存在），否则加载 config.json
+ *   - config.json 中的 host 是 Docker 服务名（mysql/redis），本地开发需改为 127.0.0.1
+ */
+{
+    "db_clients": [
+        {
+            "name": "default",
+            "rdbms": "mysql",
+            "host": "127.0.0.1",
+            "port": 3306,
+            "dbname": "online_chat",
+            "user": "online_chat",
+            "passwd": "online_chat_pwd",
+            "is_fast": false,
+            "connection_number": 10,
+            "timeout": -1.0,
+            "character_set": "utf8mb4"
+        }
+    ],
+
+    "redis_clients": [
+        {
+            "name": "default",
+            "host": "127.0.0.1",
+            "port": 6379,
+            "password": "",
+            "db": 0,
+            "number_of_connections": 10,
+            "timeout": -1.0
+        }
+    ]
+}
